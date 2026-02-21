@@ -1,5 +1,5 @@
 import re
-from typing import List
+from typing import List, Optional
 
 from .models import NumericDelta, ChangeSpan
 
@@ -9,7 +9,7 @@ DURATION_RE = re.compile(r"\b\d+\s+(?:days?|months?|years?)\b", re.IGNORECASE)
 DATE_RE = re.compile(r"\b\d{1,2}/\d{1,2}/\d{2,4}\b|\b\d{4}-\d{2}-\d{2}\b")
 
 
-def _normalize(value: str) -> float | None:
+def _normalize(value: str) -> Optional[float]:
     try:
         cleaned = value.replace("$", "").replace(",", "").replace("%", "")
         return float(cleaned)

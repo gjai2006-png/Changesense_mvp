@@ -187,28 +187,85 @@ export default function App() {
       compareBody.append("version_a", versionA);
       compareBody.append("version_b", versionB);
 
-      const integrityBody = new FormData();
-      integrityBody.append("version_a", versionA);
-      integrityBody.append("version_b", versionB);
-
-      const [compareRes, integrityRes] = await Promise.all([
-        fetch(`${API_BASE}/compare`, { method: "POST", body: compareBody }),
-        fetch(`${API_BASE}/scan-integrity`, { method: "POST", body: integrityBody }),
-      ]);
-
+      const compareRes = await fetch(`${API_BASE}/compare`, { method: "POST", body: compareBody });
       if (!compareRes.ok) throw new Error("Clause verification failed.");
-      if (!integrityRes.ok) throw new Error("Integrity scan failed.");
 
       const compareJson = await compareRes.json();
-      const integrityJson = await integrityRes.json();
+      
+      // Transform backend response to frontend expected structure
+      const transformedCompare = transformBackendResponse(compareJson);
+      
+      // Extract integrity alerts
+      const integrityJson = {
+        ghost_changes: compareJson.integrity_alerts || [],
+      };
 
-      setCompare(compareJson);
+      setCompare(transformedCompare);
       setIntegrity(integrityJson);
     } catch (runError) {
       setError(runError.message || "Verification failed.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const transformBackendResponse = (backendResponse) => {
+    const { changes = [], materiality = [] } = backendResponse;
+    
+    // Group changes by type
+    const modified = [];
+    const added = [];
+    const deleted = [];
+    
+    changes.forEach((change) => {
+      const transformedChange = {
+        id: change.clause_id,
+        heading: change.clause_id, // Use clause_id as heading if not available
+        before: change.before_text || "",
+        after: change.after_text || "",
+        before_text: change.before_text || "",
+        after_text: change.after_text || "",
+        similarity: 1.0, // Default similarity
+        risk_tags: [],
+      };
+      
+      // Determine if added, deleted, or modified
+      if (!change.before_text || change.before_text.trim() === "") {
+        added.push(transformedChange);
+      } else if (!change.after_text || change.after_text.trim() === "") {
+        deleted.push(transformedChange);
+      } else {
+        modified.push(transformedChange);
+      }
+    });
+    
+    // Create risk entries from materiality findings
+    const risks = materiality.map((finding) => ({
+      id: finding.clause_id,
+      heading: finding.clause_id,
+      risk_tags: [finding.category] || [],
+      before_text: "",
+      after_text: "",
+    }));
+    
+    // Calculate stats
+    const stats = {
+      modified_count: modified.length,
+      added_count: added.length,
+      deleted_count: deleted.length,
+      high_risk_count: risks.length,
+      obligation_shift_count: risks.filter((r) => r.risk_tags.includes("obligation")).length,
+    };
+    
+    return {
+      clauses: {
+        modified,
+        added,
+        deleted,
+      },
+      risks,
+      stats,
+    };
   };
 
   const openViewer = (change, type) => {

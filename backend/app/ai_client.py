@@ -1,6 +1,7 @@
 import json
 import os
 import urllib.request
+from typing import Optional
 
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
@@ -19,7 +20,7 @@ def build_prompt(payload: dict) -> str:
     )
 
 
-def call_gemini(payload: dict, api_key: str | None = None, model: str | None = None) -> dict:
+def call_gemini(payload: dict, api_key: Optional[str] = None, model: Optional[str] = None) -> dict:
     api_key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise RuntimeError("Missing GEMINI_API_KEY or GOOGLE_API_KEY")
