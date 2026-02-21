@@ -1,222 +1,375 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
+import DocumentViewer from "./DocumentViewer";
 
 const API_BASE = "http://localhost:8000";
 
-function Section({ title, children }) {
+function titleCaseTag(tag) {
+  return tag
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function similarityClass(score) {
+  if (score >= 95) return "good";
+  if (score >= 85) return "warn";
+  return "bad";
+}
+
+function StatBlock({ value, label }) {
   return (
-    <div className="card">
-      <div className="section-title">{title}</div>
-      {children}
+    <div className="stat-block">
+      <div className="stat-value">{value}</div>
+      <div className="stat-label">{label}</div>
     </div>
+  );
+}
+
+function ChangeCard({ change, type, onOpen, defaultOpen = false }) {
+  const similarity = typeof change.similarity === "number" ? Math.round(change.similarity * 100) : null;
+  const before = change.before || change.before_text || "";
+  const after = change.after || change.after_text || "";
+  const riskTags = change.risk_tags || [];
+
+  return (
+    <details className="change-card" open={defaultOpen}>
+      <summary className="change-card-summary">
+        <div>
+          <div className="change-card-topline">
+            <span className="change-id">{change.id || "Clause"}</span>
+            <span className={`change-pill type-${type}`}>{type}</span>
+            {similarity !== null && <span className={`change-pill similarity-${similarityClass(similarity)}`}>{similarity}%</span>}
+          </div>
+          <h4>{change.heading || "Untitled Clause"}</h4>
+        </div>
+        <span className="change-expand">View</span>
+      </summary>
+
+      <div className="change-card-body">
+        {riskTags.length > 0 && (
+          <div className="risk-tags">
+            {riskTags.map((tag) => (
+              <span key={tag} className="risk-tag">
+                {titleCaseTag(tag)}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {type === "integrity" && change.reason && <div className="integrity-note">{change.reason}</div>}
+
+        <div className="change-diff-preview">
+          <div>
+            <div className="preview-label">Before</div>
+            <pre className="preview-box before">{before || "Not present"}</pre>
+          </div>
+          <div>
+            <div className="preview-label">After</div>
+            <pre className="preview-box after">{after || "Not present"}</pre>
+          </div>
+        </div>
+
+        <button className="btn btn-primary" onClick={() => onOpen(change, type)}>
+          Open In Viewer
+        </button>
+      </div>
+    </details>
+  );
+}
+
+function EvidencePanel({ title, type, changes, onOpen }) {
+  return (
+    <section className="evidence-panel">
+      <header>
+        <h3>{title}</h3>
+        <span>{changes.length}</span>
+      </header>
+      <div className="evidence-list">
+        {changes.length === 0 ? (
+          <div className="empty-line">No {title.toLowerCase()}.</div>
+        ) : (
+          changes.map((change, idx) => (
+            <ChangeCard key={`${type}-${change.id}-${idx}`} change={change} type={type} onOpen={onOpen} />
+          ))
+        )}
+      </div>
+    </section>
   );
 }
 
 export default function App() {
   const [versionA, setVersionA] = useState(null);
   const [versionB, setVersionB] = useState(null);
-  const [loading, setLoading] = useState(false);
   const [compare, setCompare] = useState(null);
   const [integrity, setIntegrity] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [runId, setRunId] = useState(null);
-  const [stats, setStats] = useState(null);
-  const [aiSummary, setAiSummary] = useState(null);
+  const [viewerChange, setViewerChange] = useState(null);
+
+  const clauseMap = useMemo(() => {
+    const map = new Map();
+    if (!compare?.clauses) return map;
+
+    compare.clauses.modified.forEach((clause) => map.set(clause.id, { ...clause, type: "modified" }));
+    compare.clauses.added.forEach((clause) =>
+      map.set(clause.id, {
+        ...clause,
+        before: "",
+        after: clause.text,
+        before_text: "",
+        after_text: clause.text,
+        type: "added",
+      })
+    );
+    compare.clauses.deleted.forEach((clause) =>
+      map.set(clause.id, {
+        ...clause,
+        before: clause.text,
+        after: "",
+        before_text: clause.text,
+        after_text: "",
+        type: "deleted",
+      })
+    );
+
+    return map;
+  }, [compare]);
+
+  const confidence = useMemo(() => {
+    if (!compare) return "Not Available";
+    const density = compare.stats.modified_count > 0 ? compare.stats.high_risk_count / compare.stats.modified_count : 0;
+    if (density <= 0.2) return "High";
+    if (density <= 0.45) return "Medium";
+    return "Review Required";
+  }, [compare]);
+
+  const highRiskChanges = useMemo(() => {
+    if (!compare?.risks) return [];
+    return compare.risks
+      .filter((risk) => Array.isArray(risk.risk_tags) && risk.risk_tags.length > 0)
+      .map((risk) => {
+        const clause = clauseMap.get(risk.id);
+        return {
+          ...(clause || risk),
+          id: risk.id,
+          heading: risk.heading,
+          risk_tags: risk.risk_tags,
+          riskAnalysis: risk,
+          type: clause?.type || "modified",
+        };
+      });
+  }, [compare?.risks, clauseMap]);
+
+  const integrityItems = useMemo(() => {
+    if (!integrity?.ghost_changes) return [];
+    return integrity.ghost_changes.map((item) => {
+      const clause = clauseMap.get(item.id);
+      return {
+        ...(clause || item),
+        ...item,
+        type: clause?.type || "integrity",
+      };
+    });
+  }, [integrity?.ghost_changes, clauseMap]);
 
   const runVerification = async () => {
     if (!versionA || !versionB) {
-      setError("Please upload both Version A and Version B.");
+      setError("Upload both Version A and Version B first.");
       return;
     }
-    setError(null);
+
     setLoading(true);
+    setError(null);
     setCompare(null);
     setIntegrity(null);
-    setRunId(null);
-    setStats(null);
-    setAiSummary(null);
-
-    const formData = new FormData();
-    formData.append("version_a", versionA);
-    formData.append("version_b", versionB);
 
     try {
-      const compareRes = await fetch(`${API_BASE}/compare`, {
-        method: "POST",
-        body: formData
-      });
-      const compareJson = await compareRes.json();
-      setRunId(compareJson.run?.run_id || null);
-      const derivedStats = {
-        modified_count: compareJson.changes?.length || 0,
-        added_count: 0,
-        deleted_count: 0,
-        high_risk_count: compareJson.materiality?.length || 0,
-        obligation_shift_count:
-          compareJson.materiality?.filter((m) => m.category === "Obligation Strength").length || 0
-      };
-      setStats(derivedStats);
+      const compareBody = new FormData();
+      compareBody.append("version_a", versionA);
+      compareBody.append("version_b", versionB);
 
-      const integrityRes = await fetch(
-        `${API_BASE}/scan-integrity?run_id=${encodeURIComponent(compareJson.run?.run_id || "")}`,
-        { method: "POST" }
-      );
+      const integrityBody = new FormData();
+      integrityBody.append("version_a", versionA);
+      integrityBody.append("version_b", versionB);
+
+      const [compareRes, integrityRes] = await Promise.all([
+        fetch(`${API_BASE}/compare`, { method: "POST", body: compareBody }),
+        fetch(`${API_BASE}/scan-integrity`, { method: "POST", body: integrityBody }),
+      ]);
+
+      if (!compareRes.ok) throw new Error("Clause verification failed.");
+      if (!integrityRes.ok) throw new Error("Integrity scan failed.");
+
+      const compareJson = await compareRes.json();
       const integrityJson = await integrityRes.json();
 
       setCompare(compareJson);
       setIntegrity(integrityJson);
-
-      const aiRes = await fetch(
-        `${API_BASE}/ai/insights?run_id=${encodeURIComponent(compareJson.run?.run_id || "")}&ai_enabled=true`,
-        { method: "POST" }
-      );
-      const aiJson = await aiRes.json();
-      setAiSummary(aiJson);
-    } catch (err) {
-      setError("Verification failed. Check backend server.");
+    } catch (runError) {
+      setError(runError.message || "Verification failed.");
     } finally {
       setLoading(false);
     }
   };
 
-  const exportPdf = () => {
-    if (!runId) {
-      setError("Run verification first to generate a report.");
-      return;
-    }
-    window.open(`${API_BASE}/report?run_id=${encodeURIComponent(runId)}`, "_blank");
+  const openViewer = (change, type) => {
+    const base = clauseMap.get(change.id) || { ...change, type };
+    const riskAnalysis = compare?.risks?.find((risk) => risk.id === change.id);
+
+    setViewerChange({
+      ...base,
+      ...change,
+      type: base.type || type,
+      risk_tags: riskAnalysis?.risk_tags || base.risk_tags || change.risk_tags || [],
+      riskAnalysis: riskAnalysis || base.riskAnalysis,
+      before: change.before ?? base.before ?? base.before_text ?? "",
+      after: change.after ?? base.after ?? base.after_text ?? "",
+      before_text: change.before ?? base.before ?? base.before_text ?? "",
+      after_text: change.after ?? base.after ?? base.after_text ?? "",
+    });
   };
+
+  const showLanding = !compare && !loading;
 
   return (
     <div className="app">
-      <div className="hero">
-        <div>
-          <div className="badge">ChangeSense</div>
-          <h1>The Verification Layer for High-Stakes Documentation</h1>
-          <p>
-            Deterministic clause-level comparison to expose obligation shifts,
-            ghost edits, and numeric deltas.
-          </p>
-        </div>
-        <button onClick={runVerification}>Run Deterministic Verification</button>
-      </div>
+      {showLanding && (
+        <section className="landing">
+          <div className="landing-content">
+            <div className="kicker">ChangeSense</div>
+            <h1>Clause-Level Verification</h1>
+            <p>Deterministic structural comparison for high-stakes documents.</p>
+          </div>
 
-      <div className="grid">
-        <Section title="Upload Versions">
-          <label className="mono">Version A</label>
-          <input type="file" accept=".txt,.docx" onChange={(e) => setVersionA(e.target.files[0])} />
-          <label className="mono">Version B</label>
-          <input type="file" accept=".txt,.docx" onChange={(e) => setVersionB(e.target.files[0])} />
-          {error && <p className="mono">{error}</p>}
-          {loading && (
-            <div className="loader">
-              <span></span>
-            </div>
-          )}
-        </Section>
-
-        <Section title="Verification Summary">
-          {compare ? (
-            <div>
-              <p className="mono">Run ID: {runId}</p>
-              <p className="mono">Modified Clauses: {stats?.modified_count ?? 0}</p>
-              <p className="mono">Added Clauses: {stats?.added_count ?? 0}</p>
-              <p className="mono">Deleted Clauses: {stats?.deleted_count ?? 0}</p>
-              <p className="mono">High Risk Changes: {stats?.high_risk_count ?? 0}</p>
-              <p className="mono">Obligation Shifts: {stats?.obligation_shift_count ?? 0}</p>
-              <button className="secondary" onClick={exportPdf}>Generate Verified Report</button>
-            </div>
-          ) : (
-            <p className="mono">Upload files to generate verification stats.</p>
-          )}
-        </Section>
-
-        <Section title="High-Risk Changes">
-          {compare ? (
-            <div className="report-list">
-              {compare.materiality?.length ? (
-                compare.materiality.map((m, idx) => (
-                  <div key={`${m.clause_id}-${idx}`} className="clause risk">
-                    <h4>{m.category}</h4>
-                    <span className="tag">{m.severity}</span>
-                    <p className="mono">{m.rationale}</p>
-                  </div>
-                ))
-              ) : (
-                <p className="mono">No material changes flagged.</p>
-              )}
-            </div>
-          ) : (
-            <p className="mono">No high-risk changes detected yet.</p>
-          )}
-        </Section>
-
-        <Section title="Modified Clauses">
-          {compare ? (
-            <div className="report-list">
-              {compare.changes?.map((clause) => (
-                <div key={clause.clause_id} className="clause" id={clause.clause_id}>
-                  <h4>{clause.clause_id}</h4>
-                  {clause.substitutions?.length ? (
-                    clause.substitutions.slice(0, 3).map((s, idx) => (
-                      <div key={idx}>
-                        <p className="mono">Before: {s.before}</p>
-                        <p className="mono">After: {s.after}</p>
-                      </div>
-                    ))
-                  ) : (
-                    <div>
-                      <p className="mono">Before: {clause.before_text}</p>
-                      <p className="mono">After: {clause.after_text}</p>
-                    </div>
-                  )}
+          <div className="upload-sheet">
+            <div className="upload-grid">
+              <label>
+                <span>Version A</span>
+                <div className="file-picker">
+                  <span className="file-picker-btn">Choose File</span>
+                  <span className="file-picker-name">{versionA?.name || "No file selected"}</span>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <p className="mono">No modified clauses yet.</p>
-          )}
-        </Section>
-
-        <Section title="Integrity Scan">
-          {integrity ? (
-            <div className="report-list">
-              {integrity.integrity_alerts?.length === 0 ? (
-                <p className="mono">No integrity alerts detected.</p>
-              ) : (
-                integrity.integrity_alerts?.map((alert, idx) => (
-                  <div key={`${alert.clause_id}-${idx}`} className="clause risk">
-                    <h4>{alert.clause_id}</h4>
-                    <p className="mono">{alert.alert_type}</p>
-                    <p className="mono">{alert.rationale}</p>
-                  </div>
-                ))
-              )}
-            </div>
-          ) : (
-            <p className="mono">Run verification to see integrity risks.</p>
-          )}
-        </Section>
-
-        <Section title="AI Summary">
-          {aiSummary ? (
-            <div className="report-list">
-              {(aiSummary.summaries || []).map((sum, idx) => (
-                <div key={idx} className="clause">
-                  <h4>{sum.type}</h4>
-                  {(sum.bullets || []).map((b, i) => (
-                    <p key={i} className="mono">{b}</p>
-                  ))}
+                <input
+                  className="file-input-hidden"
+                  type="file"
+                  accept=".txt,.docx"
+                  onChange={(e) => setVersionA(e.target.files?.[0] || null)}
+                />
+              </label>
+              <label>
+                <span>Version B</span>
+                <div className="file-picker">
+                  <span className="file-picker-btn">Choose File</span>
+                  <span className="file-picker-name">{versionB?.name || "No file selected"}</span>
                 </div>
-              ))}
-              {(!aiSummary.summaries || aiSummary.summaries.length === 0) && (
-                <p className="mono">No AI summary returned.</p>
-              )}
+                <input
+                  className="file-input-hidden"
+                  type="file"
+                  accept=".txt,.docx"
+                  onChange={(e) => setVersionB(e.target.files?.[0] || null)}
+                />
+              </label>
             </div>
-          ) : (
-            <p className="mono">AI summary will appear after verification.</p>
-          )}
-        </Section>
-      </div>
+            <button className="btn btn-primary large" onClick={runVerification} disabled={loading}>
+              {loading ? "Running..." : "Run Clause-Level Verification"}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {(compare || loading) && (
+        <section className="topbar">
+          <div className="upload-grid compact">
+            <label>
+              <span>Version A</span>
+              <div className="file-picker">
+                <span className="file-picker-btn">Choose File</span>
+                <span className="file-picker-name">{versionA?.name || "No file selected"}</span>
+              </div>
+              <input
+                className="file-input-hidden"
+                type="file"
+                accept=".txt,.docx"
+                onChange={(e) => setVersionA(e.target.files?.[0] || null)}
+              />
+            </label>
+            <label>
+              <span>Version B</span>
+              <div className="file-picker">
+                <span className="file-picker-btn">Choose File</span>
+                <span className="file-picker-name">{versionB?.name || "No file selected"}</span>
+              </div>
+              <input
+                className="file-input-hidden"
+                type="file"
+                accept=".txt,.docx"
+                onChange={(e) => setVersionB(e.target.files?.[0] || null)}
+              />
+            </label>
+          </div>
+          <button className="btn btn-primary" onClick={runVerification} disabled={loading}>
+            {loading ? "Running..." : "Run Clause-Level Verification"}
+          </button>
+          <div className="run-meta">
+            <span className={`status ${compare ? "done" : "idle"}`}>{compare ? "Complete" : "Idle"}</span>
+            <span className="confidence">Confidence: {confidence}</span>
+          </div>
+        </section>
+      )}
+
+      {error && <div className="error">{error}</div>}
+      {loading && <div className="loading">Analyzing clauses and integrity signals...</div>}
+
+      {compare && (
+        <>
+          <section className="overview">
+            <article className="high-risk">
+              <header>
+                <h2>High-Risk Changes</h2>
+                <span>{compare.stats.high_risk_count}</span>
+              </header>
+
+              <div className="high-risk-body">
+                {highRiskChanges.length === 0 ? (
+                  <div className="empty-line">No high-risk clauses detected.</div>
+                ) : (
+                  highRiskChanges.map((change, idx) => (
+                    <ChangeCard
+                      key={`high-${change.id}-${idx}`}
+                      change={change}
+                      type={change.type || "modified"}
+                      onOpen={openViewer}
+                      defaultOpen={idx === 0}
+                    />
+                  ))
+                )}
+              </div>
+            </article>
+
+            <aside className="summary">
+              <h3>Verification Summary</h3>
+              <div className="summary-stats">
+                <StatBlock value={compare.stats.modified_count} label="Modified" />
+                <StatBlock value={compare.stats.added_count} label="Added" />
+                <StatBlock value={compare.stats.deleted_count} label="Deleted" />
+                <StatBlock value={compare.stats.high_risk_count} label="High Risk" />
+                <StatBlock value={compare.stats.obligation_shift_count} label="Obligation Shifts" />
+              </div>
+              <button className="btn btn-ghost" onClick={() => window.open(`${API_BASE}/report`, "_blank")}>
+                Export PDF Report
+              </button>
+            </aside>
+          </section>
+
+          <section className="evidence">
+            <EvidencePanel title="Modified" type="modified" changes={compare.clauses.modified} onOpen={openViewer} />
+            <EvidencePanel title="Added" type="added" changes={compare.clauses.added} onOpen={openViewer} />
+            <EvidencePanel title="Deleted" type="deleted" changes={compare.clauses.deleted} onOpen={openViewer} />
+            <EvidencePanel title="Integrity" type="integrity" changes={integrityItems} onOpen={openViewer} />
+          </section>
+        </>
+      )}
+
+      {viewerChange && <DocumentViewer change={viewerChange} onClose={() => setViewerChange(null)} />}
     </div>
   );
 }
