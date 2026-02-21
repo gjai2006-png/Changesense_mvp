@@ -1,51 +1,68 @@
+import hashlib
 import re
 from datetime import datetime
 
-MODAL_VERBS = {
-    "may",
-    "shall",
-    "must",
-    "should",
-    "will",
-    "can",
-    "may not",
-    "shall not",
-    "must not",
-}
-
-DATE_PATTERNS = [
-    r"\b\d{4}-\d{2}-\d{2}\b",  # YYYY-MM-DD
-    r"\b\d{1,2}/\d{1,2}/\d{2,4}\b",  # 1/2/2026
-    r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{1,2},\s+\d{4}\b",
+LEGAL_MULTIWORD = [
+    "to the extent",
+    "provided that",
+    "in accordance with",
+    "subject to",
+    "as set forth",
 ]
-
-NUMBER_PATTERN = r"\b\d+(?:\.\d+)?%?\b"
-
-
-def normalize_space(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def tokenize_modal(text: str) -> set[str]:
-    t = text.lower()
-    found = set()
-    for mv in MODAL_VERBS:
-        if mv in t:
-            found.add(mv)
-    return found
-
-
-def extract_numbers(text: str) -> set[str]:
-    return set(re.findall(NUMBER_PATTERN, text))
-
-
-def extract_dates(text: str) -> set[str]:
-    dates = set()
-    for pat in DATE_PATTERNS:
-        for m in re.findall(pat, text):
-            dates.add(m)
-    return dates
 
 
 def now_iso() -> str:
     return datetime.utcnow().isoformat() + "Z"
+
+
+def doc_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
+
+
+def clause_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
+
+
+def normalize_whitespace(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def normalize_quotes(text: str) -> str:
+    return (
+        text.replace("\u201c", '"')
+        .replace("\u201d", '"')
+        .replace("\u2018", "'")
+        .replace("\u2019", "'")
+    )
+
+
+def normalize_punctuation(text: str) -> str:
+    text = text.replace("–", "-").replace("—", "-")
+    text = re.sub(r"\s*\(\s*", "(", text)
+    text = re.sub(r"\s*\)\s*", ")", text)
+    return text
+
+
+def normalize_numbering(text: str) -> str:
+    return re.sub(r"\b(\d+)\.(\d+)\b", lambda m: f"{int(m.group(1))}.{int(m.group(2))}", text)
+
+
+def canonicalize(text: str) -> str:
+    text = normalize_quotes(text)
+    text = normalize_punctuation(text)
+    text = normalize_numbering(text)
+    text = normalize_whitespace(text)
+    return text
+
+
+def tokenize_legal(text: str) -> list[str]:
+    t = text.lower()
+    for phrase in LEGAL_MULTIWORD:
+        t = t.replace(phrase, phrase.replace(" ", "_"))
+    tokens = re.findall(r"[\w_]+|[^\w\s]", t)
+    return tokens
+
+
+def sentence_split(text: str) -> list[str]:
+    parts = re.split(r"(?<=[\.!?])\s+", text)
+    return [p.strip() for p in parts if p.strip()]

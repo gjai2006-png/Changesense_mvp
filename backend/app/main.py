@@ -1,16 +1,41 @@
+import uuid
+from typing import Dict, List
+
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
-from .diff import compute_diff
-from .rules import risk_tag_clause
+from .ingest import parse_upload
+from .clause_tree import build_clause_tree
+from .alignment import align_clauses
+from .diff_engine import diff_clause, diff_tables
+from .rules_engine import apply_rules
+from .dependency import build_term_index, build_cross_refs, build_dependency_graph, build_impact_reports
+from .numeric import extract_numeric_deltas, build_numeric_links
+from .integrity import detect_integrity
+from .audit import build_audit
+from .exporter import build_html_report, build_pdf_report
+from .ai_client import call_gemini
+from .models import (
+    CompareResponse,
+    ChangeSet,
+    MaterialityFinding,
+    IntegrityAlert,
+    NumericDelta,
+    ImpactReport,
+    AiResponse,
+    AiChangeInsight,
+    AiImpactAnalysis,
+    AiSummary,
+    Version,
+    ComparisonRun,
+    DealWorkspace,
+    DocumentFamily,
+    ReviewSession,
+)
 from .utils import now_iso
-from .report import build_pdf_report
 
-import io
-from docx import Document
-
-app = FastAPI(title="ChangeSense MVP")
+app = FastAPI(title="ChangeSense Backend MVP")
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,135 +45,261 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-LAST_RESULT = {
-    "compare": None,
-    "documents": {
-        "version_a": None,
-        "version_b": None,
-    }
-}
+RUNS: Dict[str, CompareResponse] = {}
 
 
-def read_upload(file: UploadFile) -> str:
-    if not file:
-        raise HTTPException(status_code=400, detail="Missing file")
+def _flatten(tree):
+    nodes = []
 
-    name = (file.filename or "").lower()
-    data = file.file.read()
+    def walk(node):
+        if node.clause_id != "root":
+            nodes.append(node)
+        for child in node.children:
+            walk(child)
 
-    if name.endswith(".docx"):
-        doc = Document(io.BytesIO(data))
-        text = "\n".join(p.text for p in doc.paragraphs if p.text)
-        return text
-
-    return data.decode("utf-8", errors="ignore")
+    walk(tree.root)
+    return nodes
 
 
-@app.post("/compare")
-async def compare(version_a: UploadFile = File(...), version_b: UploadFile = File(...)):
-    a_text = read_upload(version_a)
-    b_text = read_upload(version_b)
+def _doc_text(canonical) -> str:
+    return "\n".join(block.text for block in canonical.blocks if block.text)
 
-    diff = compute_diff(a_text, b_text)
-    modified = diff["clauses"]["modified"]
 
-    risks = [risk_tag_clause(cl) for cl in modified]
+def _table_cells(canonical):
+    cells = []
+    for block in canonical.blocks:
+        if block.block_type == "table_cell":
+            cells.append({
+                "row": block.span.row,
+                "col": block.span.col,
+                "text": block.text,
+            })
+    return cells
 
-    stats = {
-        "modified_count": len(modified),
-        "added_count": len(diff["clauses"]["added"]),
-        "deleted_count": len(diff["clauses"]["deleted"]),
-        "high_risk_count": sum(1 for r in risks if r["risk_tags"]),
-        "obligation_shift_count": sum(1 for r in risks if r["obligation_shifts"]),
-    }
 
+def _ai_insights(compare: CompareResponse, ai_enabled: bool) -> AiResponse:
+    if not ai_enabled:
+        return AiResponse(insights=[], impacts=[], summaries=[], ai_enabled=False)
+
+    # Minimal structured payload for external AI (no full document text).
     payload = {
-        "clauses": diff["clauses"],
-        "risks": risks,
-        "stats": stats,
-        "generated_at": now_iso(),
+        "materiality": [m.dict() for m in compare.materiality[:20]],
+        "numeric_deltas": [n.dict() for n in compare.numeric_deltas[:20]],
+        "impact_reports": [
+            {
+                "term_changed": r.term_changed,
+                "affected_clauses": [c.clause_id for c in r.affected_clauses[:10]],
+            }
+            for r in compare.impact_reports[:10]
+        ],
+        "changes": [
+            {
+                "clause_id": c.clause_id,
+                "insertions": [i.dict() for i in c.insertions[:3]],
+                "deletions": [d.dict() for d in c.deletions[:3]],
+                "substitutions": [s.dict() for s in c.substitutions[:3]],
+            }
+            for c in compare.changes[:10]
+        ],
     }
 
-    # Store documents for later retrieval
-    LAST_RESULT["documents"]["version_a"] = {
-        "paragraphs": diff["paragraphs_a"],
-        "raw_text": a_text,
-    }
-    LAST_RESULT["documents"]["version_b"] = {
-        "paragraphs": diff["paragraphs_b"],
-        "raw_text": b_text,
-    }
-    LAST_RESULT["compare"] = payload
-    return payload
+    # Attempt Gemini call if API key is present.
+    try:
+        gemini_out = call_gemini(payload)
+        return AiResponse(
+            insights=gemini_out.get("insights", []),
+            impacts=gemini_out.get("impacts", []),
+            summaries=gemini_out.get("summaries", []),
+            ai_enabled=True,
+            raw_text=gemini_out.get("raw_text"),
+        )
+    except Exception:
+        # Fallback to deterministic stub if Gemini fails.
+        pass
+
+    insights: List[AiChangeInsight] = []
+    for finding in compare.materiality[:10]:
+        insights.append(
+            AiChangeInsight(
+                change_id=finding.clause_id,
+                semantic_label=finding.category,
+                risk_direction="buyer_friendly" if "weaken" in finding.rationale.lower() else "seller_friendly",
+                explanation=f"Change indicates {finding.rationale.lower()}.",
+                confidence=0.72,
+                citations_to_facts=[finding.clause_id],
+            )
+        )
+
+    impacts: List[AiImpactAnalysis] = []
+    for report in compare.impact_reports[:10]:
+        for impacted in report.affected_clauses[:3]:
+            impacts.append(
+                AiImpactAnalysis(
+                    trigger_change_id=report.term_changed,
+                    impacted_clause_id=impacted.clause_id,
+                    impact_summary="Definition change may alter interpretation of this clause.",
+                    why_linked="term reference",
+                    confidence=0.65,
+                )
+            )
+
+    summaries = [
+        AiSummary(
+            type="executive",
+            bullets=[f"{len(compare.materiality)} material changes flagged."],
+            backing_change_ids=[m.clause_id for m in compare.materiality[:5]],
+        )
+    ]
+
+    return AiResponse(insights=insights, impacts=impacts, summaries=summaries, ai_enabled=True)
+
+
+@app.post("/compare", response_model=CompareResponse)
+async def compare(version_a: UploadFile = File(...), version_b: UploadFile = File(...)):
+    data_a = await version_a.read()
+    data_b = await version_b.read()
+
+    canonical_a = parse_upload(version_a.filename, data_a)
+    canonical_b = parse_upload(version_b.filename, data_b)
+
+    tree_a = build_clause_tree(canonical_a.blocks)
+    tree_b = build_clause_tree(canonical_b.blocks)
+
+    alignment = align_clauses(tree_a, tree_b)
+
+    clauses_a = _flatten(tree_a)
+    clauses_b = {c.clause_id: c for c in _flatten(tree_b)}
+
+    changes: List[ChangeSet] = []
+    materiality: List[MaterialityFinding] = []
+    numeric_deltas: List[NumericDelta] = []
+
+    clause_texts = {}
+    definition_changes = []
+    term_map = {t.definition_clause_id: t.term for t in tree_b.defined_terms}
+
+    for entry in alignment.entries:
+        if not entry.new_clause_ids:
+            continue
+        old_clause = next((c for c in clauses_a if c.clause_id == entry.old_clause_id), None)
+        if not old_clause:
+            continue
+        for new_id in entry.new_clause_ids:
+            new_clause = clauses_b.get(new_id)
+            if not new_clause:
+                continue
+
+        before = old_clause.text
+        after = new_clause.text
+        clause_texts[new_clause.clause_id] = after
+
+        change = diff_clause(before, after)
+        change.clause_id = new_clause.clause_id
+        change.before_text = before
+        change.after_text = after
+        if entry.move_detected:
+            change.moved_blocks.append(entry.old_clause_id)
+        changes.append(change)
+
+        for finding in apply_rules(before, after):
+            finding.clause_id = new_clause.clause_id
+            materiality.append(finding)
+
+        numeric_deltas.extend(extract_numeric_deltas(new_clause.clause_id, before, after))
+
+        if new_clause.clause_id in term_map:
+            definition_changes.append(
+                {"term": term_map[new_clause.clause_id], "before": before, "after": after}
+            )
+
+    # Table diff
+    table_changes = diff_tables(_table_cells(canonical_a), _table_cells(canonical_b))
+    if table_changes:
+        changes.append(
+            ChangeSet(
+                clause_id="table-changes",
+                before_text="",
+                after_text="",
+                insertions=[],
+                deletions=[],
+                substitutions=[],
+                moved_blocks=[],
+                table_cell_changes=table_changes,
+            )
+        )
+
+    # Defined-term changes
+
+    term_usage = build_term_index(_flatten(tree_b), tree_b.defined_terms)
+    cross_refs = build_cross_refs(_flatten(tree_b))
+    numeric_links = build_numeric_links(_flatten(tree_b))
+    dependency_graph = build_dependency_graph(_flatten(tree_b), tree_b.defined_terms, term_usage, cross_refs, numeric_links)
+    impact_reports: List[ImpactReport] = build_impact_reports(definition_changes, term_usage)
+
+    integrity_alerts: List[IntegrityAlert] = detect_integrity(changes)
+
+    audit_log = build_audit(_doc_text(canonical_b), clause_texts)
+
+    run = ComparisonRun(
+        run_id=f"run-{uuid.uuid4().hex[:8]}",
+        version_a=Version(version_id="v-a", name=version_a.filename or "Version A"),
+        version_b=Version(version_id="v-b", name=version_b.filename or "Version B"),
+    )
+    workspace = DealWorkspace(workspace_id=f"ws-{uuid.uuid4().hex[:6]}", name="Demo Workspace")
+    document_family = DocumentFamily(family_id=f"fam-{uuid.uuid4().hex[:6]}", name="SPA/APA")
+    review_session = ReviewSession(review_id=f"rev-{uuid.uuid4().hex[:6]}", run_id=run.run_id, status="open")
+
+    response = CompareResponse(
+        canonical_a=canonical_a,
+        canonical_b=canonical_b,
+        clause_tree_a=tree_a,
+        clause_tree_b=tree_b,
+        alignment=alignment,
+        changes=changes,
+        materiality=materiality,
+        dependency_graph=dependency_graph,
+        impact_reports=impact_reports,
+        numeric_deltas=numeric_deltas,
+        integrity_alerts=integrity_alerts,
+        audit_log=audit_log,
+        run=run,
+        workspace=workspace,
+        document_family=document_family,
+        review_session=review_session,
+    )
+
+    RUNS[run.run_id] = response
+    return response
 
 
 @app.post("/scan-integrity")
-async def scan_integrity(version_a: UploadFile = File(...), version_b: UploadFile = File(...)):
-    a_text = read_upload(version_a)
-    b_text = read_upload(version_b)
-
-    diff = compute_diff(a_text, b_text)
-    modified = diff["clauses"]["modified"]
-
-    ghost_changes = []
-    for clause in modified:
-        before = clause["before"]
-        after = clause["after"]
-        tracked = "[tracked]" in after.lower() or "[tracked]" in before.lower()
-        if not tracked:
-            ghost_changes.append(
-                {
-                    "id": clause["id"],
-                    "heading": clause["heading"],
-                    "reason": "Edited text without track-change marker",
-                    "before": before,
-                    "after": after,
-                }
-            )
-
-    payload = {"ghost_changes": ghost_changes, "generated_at": now_iso()}
-    return payload
-
-
-@app.get("/document/{version}")
-async def get_document(version: str):
-    """
-    Get document paragraphs for rendering in the viewer.
-    version: "a" or "b"
-    """
-    version_key = f"version_{version.lower()}"
-    if version_key not in LAST_RESULT["documents"]:
-        raise HTTPException(status_code=400, detail=f"Invalid version: {version}")
-    
-    doc = LAST_RESULT["documents"][version_key]
-    if not doc:
-        raise HTTPException(status_code=400, detail="No document available. Run comparison first.")
-    
-    return {
-        "version": version,
-        "paragraphs": [
-            {"index": idx, "text": para}
-            for idx, para in enumerate(doc["paragraphs"])
-        ]
-    }
+async def scan_integrity(run_id: str):
+    if run_id not in RUNS:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return {"run_id": run_id, "integrity_alerts": RUNS[run_id].integrity_alerts, "generated_at": now_iso()}
 
 
 @app.get("/report")
-async def report():
-    data = LAST_RESULT.get("compare")
-    if not data:
-        raise HTTPException(status_code=400, detail="No comparison available")
-
-    summary = {
-        "deal_name": "Demo Deal",
-        "version_a": "Version A",
-        "version_b": "Version B",
-        "modified_count": data["stats"]["modified_count"],
-        "added_count": data["stats"]["added_count"],
-        "deleted_count": data["stats"]["deleted_count"],
-        "high_risk_count": data["stats"]["high_risk_count"],
-        "obligation_shift_count": data["stats"]["obligation_shift_count"],
-    }
-
-    pdf = build_pdf_report(summary)
+async def report(run_id: str):
+    if run_id not in RUNS:
+        raise HTTPException(status_code=404, detail="Run not found")
+    compare = RUNS[run_id]
+    pdf = build_pdf_report(compare.changes, compare.materiality)
     return Response(content=pdf, media_type="application/pdf")
+
+
+@app.get("/report/html")
+async def report_html(run_id: str):
+    if run_id not in RUNS:
+        raise HTTPException(status_code=404, detail="Run not found")
+    compare = RUNS[run_id]
+    html = build_html_report(compare.changes, compare.materiality)
+    return Response(content=html, media_type="text/html")
+
+
+@app.post("/ai/insights", response_model=AiResponse)
+async def ai_insights(run_id: str, ai_enabled: bool = True):
+    if run_id not in RUNS:
+        raise HTTPException(status_code=404, detail="Run not found")
+    compare = RUNS[run_id]
+    return _ai_insights(compare, ai_enabled)

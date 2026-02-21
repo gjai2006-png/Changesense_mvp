@@ -90,6 +90,21 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
+### Gemini AI (Optional)
+To enable AI interpretation via Gemini, set an API key before running the backend:
+
+```bash
+export GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
+# Optional override (default is gemini-2.5-flash)
+export GEMINI_MODEL="gemini-2.5-flash"
+```
+
+Then call:
+
+```
+POST /ai/insights?run_id=...&ai_enabled=true
+```
+
 ### Frontend
 ```bash
 cd /Users/jaiaakash/Desktop/Changesense/frontend

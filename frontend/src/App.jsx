@@ -18,6 +18,9 @@ export default function App() {
   const [compare, setCompare] = useState(null);
   const [integrity, setIntegrity] = useState(null);
   const [error, setError] = useState(null);
+  const [runId, setRunId] = useState(null);
+  const [stats, setStats] = useState(null);
+  const [aiSummary, setAiSummary] = useState(null);
 
   const runVerification = async () => {
     if (!versionA || !versionB) {
@@ -28,6 +31,9 @@ export default function App() {
     setLoading(true);
     setCompare(null);
     setIntegrity(null);
+    setRunId(null);
+    setStats(null);
+    setAiSummary(null);
 
     const formData = new FormData();
     formData.append("version_a", versionA);
@@ -39,15 +45,32 @@ export default function App() {
         body: formData
       });
       const compareJson = await compareRes.json();
+      setRunId(compareJson.run?.run_id || null);
+      const derivedStats = {
+        modified_count: compareJson.changes?.length || 0,
+        added_count: 0,
+        deleted_count: 0,
+        high_risk_count: compareJson.materiality?.length || 0,
+        obligation_shift_count:
+          compareJson.materiality?.filter((m) => m.category === "Obligation Strength").length || 0
+      };
+      setStats(derivedStats);
 
-      const integrityRes = await fetch(`${API_BASE}/scan-integrity`, {
-        method: "POST",
-        body: formData
-      });
+      const integrityRes = await fetch(
+        `${API_BASE}/scan-integrity?run_id=${encodeURIComponent(compareJson.run?.run_id || "")}`,
+        { method: "POST" }
+      );
       const integrityJson = await integrityRes.json();
 
       setCompare(compareJson);
       setIntegrity(integrityJson);
+
+      const aiRes = await fetch(
+        `${API_BASE}/ai/insights?run_id=${encodeURIComponent(compareJson.run?.run_id || "")}&ai_enabled=true`,
+        { method: "POST" }
+      );
+      const aiJson = await aiRes.json();
+      setAiSummary(aiJson);
     } catch (err) {
       setError("Verification failed. Check backend server.");
     } finally {
@@ -56,7 +79,11 @@ export default function App() {
   };
 
   const exportPdf = () => {
-    window.open(`${API_BASE}/report`, "_blank");
+    if (!runId) {
+      setError("Run verification first to generate a report.");
+      return;
+    }
+    window.open(`${API_BASE}/report?run_id=${encodeURIComponent(runId)}`, "_blank");
   };
 
   return (
@@ -90,11 +117,12 @@ export default function App() {
         <Section title="Verification Summary">
           {compare ? (
             <div>
-              <p className="mono">Modified Clauses: {compare.stats.modified_count}</p>
-              <p className="mono">Added Clauses: {compare.stats.added_count}</p>
-              <p className="mono">Deleted Clauses: {compare.stats.deleted_count}</p>
-              <p className="mono">High Risk Changes: {compare.stats.high_risk_count}</p>
-              <p className="mono">Obligation Shifts: {compare.stats.obligation_shift_count}</p>
+              <p className="mono">Run ID: {runId}</p>
+              <p className="mono">Modified Clauses: {stats?.modified_count ?? 0}</p>
+              <p className="mono">Added Clauses: {stats?.added_count ?? 0}</p>
+              <p className="mono">Deleted Clauses: {stats?.deleted_count ?? 0}</p>
+              <p className="mono">High Risk Changes: {stats?.high_risk_count ?? 0}</p>
+              <p className="mono">Obligation Shifts: {stats?.obligation_shift_count ?? 0}</p>
               <button className="secondary" onClick={exportPdf}>Generate Verified Report</button>
             </div>
           ) : (
@@ -105,16 +133,17 @@ export default function App() {
         <Section title="High-Risk Changes">
           {compare ? (
             <div className="report-list">
-              {compare.risks
-                .filter((r) => r.risk_tags.length)
-                .map((risk) => (
-                  <div key={risk.id} className="clause risk">
-                    <h4>{risk.heading}</h4>
-                    {risk.risk_tags.map((tag) => (
-                      <span key={tag} className="tag">{tag}</span>
-                    ))}
+              {compare.materiality?.length ? (
+                compare.materiality.map((m, idx) => (
+                  <div key={`${m.clause_id}-${idx}`} className="clause risk">
+                    <h4>{m.category}</h4>
+                    <span className="tag">{m.severity}</span>
+                    <p className="mono">{m.rationale}</p>
                   </div>
-                ))}
+                ))
+              ) : (
+                <p className="mono">No material changes flagged.</p>
+              )}
             </div>
           ) : (
             <p className="mono">No high-risk changes detected yet.</p>
@@ -124,11 +153,22 @@ export default function App() {
         <Section title="Modified Clauses">
           {compare ? (
             <div className="report-list">
-              {compare.clauses.modified.map((clause) => (
-                <div key={clause.id} className="clause" id={clause.id}>
-                  <h4>{clause.heading}</h4>
-                  <p className="mono">Before: {clause.before}</p>
-                  <p className="mono">After: {clause.after}</p>
+              {compare.changes?.map((clause) => (
+                <div key={clause.clause_id} className="clause" id={clause.clause_id}>
+                  <h4>{clause.clause_id}</h4>
+                  {clause.substitutions?.length ? (
+                    clause.substitutions.slice(0, 3).map((s, idx) => (
+                      <div key={idx}>
+                        <p className="mono">Before: {s.before}</p>
+                        <p className="mono">After: {s.after}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <div>
+                      <p className="mono">Before: {clause.before_text}</p>
+                      <p className="mono">After: {clause.after_text}</p>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -140,19 +180,40 @@ export default function App() {
         <Section title="Integrity Scan">
           {integrity ? (
             <div className="report-list">
-              {integrity.ghost_changes.length === 0 ? (
-                <p className="mono">No ghost changes detected.</p>
+              {integrity.integrity_alerts?.length === 0 ? (
+                <p className="mono">No integrity alerts detected.</p>
               ) : (
-                integrity.ghost_changes.map((clause) => (
-                  <div key={clause.id} className="clause risk">
-                    <h4>{clause.heading}</h4>
-                    <p className="mono">{clause.reason}</p>
+                integrity.integrity_alerts?.map((alert, idx) => (
+                  <div key={`${alert.clause_id}-${idx}`} className="clause risk">
+                    <h4>{alert.clause_id}</h4>
+                    <p className="mono">{alert.alert_type}</p>
+                    <p className="mono">{alert.rationale}</p>
                   </div>
                 ))
               )}
             </div>
           ) : (
             <p className="mono">Run verification to see integrity risks.</p>
+          )}
+        </Section>
+
+        <Section title="AI Summary">
+          {aiSummary ? (
+            <div className="report-list">
+              {(aiSummary.summaries || []).map((sum, idx) => (
+                <div key={idx} className="clause">
+                  <h4>{sum.type}</h4>
+                  {(sum.bullets || []).map((b, i) => (
+                    <p key={i} className="mono">{b}</p>
+                  ))}
+                </div>
+              ))}
+              {(!aiSummary.summaries || aiSummary.summaries.length === 0) && (
+                <p className="mono">No AI summary returned.</p>
+              )}
+            </div>
+          ) : (
+            <p className="mono">AI summary will appear after verification.</p>
           )}
         </Section>
       </div>
