@@ -20,7 +20,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-LAST_RESULT = {"compare": None}
+LAST_RESULT = {
+    "compare": None,
+    "documents": {
+        "version_a": None,
+        "version_b": None,
+    }
+}
 
 
 def read_upload(file: UploadFile) -> str:
@@ -63,6 +69,15 @@ async def compare(version_a: UploadFile = File(...), version_b: UploadFile = Fil
         "generated_at": now_iso(),
     }
 
+    # Store documents for later retrieval
+    LAST_RESULT["documents"]["version_a"] = {
+        "paragraphs": diff["paragraphs_a"],
+        "raw_text": a_text,
+    }
+    LAST_RESULT["documents"]["version_b"] = {
+        "paragraphs": diff["paragraphs_b"],
+        "raw_text": b_text,
+    }
     LAST_RESULT["compare"] = payload
     return payload
 
@@ -93,6 +108,29 @@ async def scan_integrity(version_a: UploadFile = File(...), version_b: UploadFil
 
     payload = {"ghost_changes": ghost_changes, "generated_at": now_iso()}
     return payload
+
+
+@app.get("/document/{version}")
+async def get_document(version: str):
+    """
+    Get document paragraphs for rendering in the viewer.
+    version: "a" or "b"
+    """
+    version_key = f"version_{version.lower()}"
+    if version_key not in LAST_RESULT["documents"]:
+        raise HTTPException(status_code=400, detail=f"Invalid version: {version}")
+    
+    doc = LAST_RESULT["documents"][version_key]
+    if not doc:
+        raise HTTPException(status_code=400, detail="No document available. Run comparison first.")
+    
+    return {
+        "version": version,
+        "paragraphs": [
+            {"index": idx, "text": para}
+            for idx, para in enumerate(doc["paragraphs"])
+        ]
+    }
 
 
 @app.get("/report")
