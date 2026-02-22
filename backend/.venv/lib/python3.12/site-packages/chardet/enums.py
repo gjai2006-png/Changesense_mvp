@@ -4,10 +4,10 @@ All of the Enums that are used throughout the chardet package.
 :author: Dan Blanchard (dan.blanchard@gmail.com)
 """
 
-from enum import Enum, Flag
+from enum import Flag, IntEnum, auto
 
 
-class InputState:
+class InputState(IntEnum):
     """
     This enum represents the different states a universal detector can be in.
     """
@@ -23,18 +23,17 @@ class LanguageFilter(Flag):
     ``UniversalDetector``.
     """
 
-    NONE = 0x00
-    CHINESE_SIMPLIFIED = 0x01
-    CHINESE_TRADITIONAL = 0x02
-    JAPANESE = 0x04
-    KOREAN = 0x08
-    NON_CJK = 0x10
-    ALL = 0x1F
+    CHINESE_SIMPLIFIED = auto()
+    CHINESE_TRADITIONAL = auto()
+    JAPANESE = auto()
+    KOREAN = auto()
+    NON_CJK = auto()
     CHINESE = CHINESE_SIMPLIFIED | CHINESE_TRADITIONAL
     CJK = CHINESE | JAPANESE | KOREAN
+    ALL = NON_CJK | CJK
 
 
-class ProbingState(Enum):
+class ProbingState(IntEnum):
     """
     This enum represents the different states a prober can be in.
     """
@@ -44,7 +43,7 @@ class ProbingState(Enum):
     NOT_ME = 2
 
 
-class MachineState:
+class MachineState(IntEnum):
     """
     This enum represents the different states a state machine can be in.
     """
@@ -54,7 +53,7 @@ class MachineState:
     ITS_ME = 2
 
 
-class SequenceLikelihood:
+class SequenceLikelihood(IntEnum):
     """
     This enum represents the likelihood of a character following the previous one.
     """
@@ -64,22 +63,42 @@ class SequenceLikelihood:
     LIKELY = 2
     POSITIVE = 3
 
-    @classmethod
-    def get_num_categories(cls) -> int:
-        """:returns: The number of likelihood categories in the enum."""
-        return 4
 
-
-class CharacterCategory:
+class CharacterCategory(IntEnum):
     """
     This enum represents the different categories language models for
     ``SingleByteCharsetProber`` put characters into.
 
-    Anything less than CONTROL is considered a letter.
+    Anything less than DIGIT is considered a letter.
     """
 
     UNDEFINED = 255
-    LINE_BREAK = 254
+    CONTROL = 254
     SYMBOL = 253
-    DIGIT = 252
-    CONTROL = 251
+    LINE_BREAK = 252
+    DIGIT = 251
+
+
+class EncodingEra(Flag):
+    """
+    This enum represents different eras of character encodings, used to filter
+    which encodings are considered during detection.
+
+    The numeric values also serve as preference tiers for tie-breaking when
+    confidence scores are very close. Lower values = more preferred/modern.
+
+    MODERN_WEB: UTF-8/16/32, Windows-125x, CP874, KOI8-R/U, CJK multi-byte (widely used on the web)
+    LEGACY_ISO: ISO-8859-x (legacy but well-known standards)
+    LEGACY_MAC: Mac-specific encodings (MacRoman, MacCyrillic, etc.)
+    LEGACY_REGIONAL: Uncommon regional/national encodings (KOI8-T, KZ1048, CP1006, etc.)
+    DOS: DOS/OEM code pages (CP437, CP850, CP866, etc.)
+    MAINFRAME: EBCDIC variants (CP037, CP500, etc.)
+    """
+
+    MODERN_WEB = auto()
+    LEGACY_ISO = auto()
+    LEGACY_MAC = auto()
+    LEGACY_REGIONAL = auto()
+    DOS = auto()
+    MAINFRAME = auto()
+    ALL = MODERN_WEB | LEGACY_ISO | LEGACY_MAC | LEGACY_REGIONAL | DOS | MAINFRAME

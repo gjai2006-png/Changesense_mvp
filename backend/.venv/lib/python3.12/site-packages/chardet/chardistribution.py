@@ -20,12 +20,11 @@
 # Lesser General Public License for more details.
 #
 # You should have received a copy of the GNU Lesser General Public
-# License along with this library; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
-# 02110-1301  USA
+# License along with this library; if not, see
+# <https://www.gnu.org/licenses/>.
 ######################### END LICENSE BLOCK #########################
 
-from typing import Tuple, Union
+from typing import Union
 
 from .big5freq import (
     BIG5_CHAR_TO_FREQ_ORDER,
@@ -36,11 +35,6 @@ from .euckrfreq import (
     EUCKR_CHAR_TO_FREQ_ORDER,
     EUCKR_TABLE_SIZE,
     EUCKR_TYPICAL_DISTRIBUTION_RATIO,
-)
-from .euctwfreq import (
-    EUCTW_CHAR_TO_FREQ_ORDER,
-    EUCTW_TABLE_SIZE,
-    EUCTW_TYPICAL_DISTRIBUTION_RATIO,
 )
 from .gb2312freq import (
     GB2312_CHAR_TO_FREQ_ORDER,
@@ -64,7 +58,7 @@ class CharDistributionAnalysis:
     def __init__(self) -> None:
         # Mapping table to get frequency order from char order (get from
         # GetOrder())
-        self._char_to_freq_order: Tuple[int, ...] = tuple()
+        self._char_to_freq_order: tuple[int, ...] = tuple()
         self._table_size = 0  # Size of above table
         # This is a constant value which varies from language to language,
         # used in calculating confidence.  See
@@ -129,24 +123,6 @@ class CharDistributionAnalysis:
         return -1
 
 
-class EUCTWDistributionAnalysis(CharDistributionAnalysis):
-    def __init__(self) -> None:
-        super().__init__()
-        self._char_to_freq_order = EUCTW_CHAR_TO_FREQ_ORDER
-        self._table_size = EUCTW_TABLE_SIZE
-        self.typical_distribution_ratio = EUCTW_TYPICAL_DISTRIBUTION_RATIO
-
-    def get_order(self, byte_str: Union[bytes, bytearray]) -> int:
-        # for euc-TW encoding, we are interested
-        #   first  byte range: 0xc4 -- 0xfe
-        #   second byte range: 0xa1 -- 0xfe
-        # no validation needed here. State machine has done that
-        first_char = byte_str[0]
-        if first_char >= 0xC4:
-            return 94 * (first_char - 0xC4) + byte_str[1] - 0xA1
-        return -1
-
-
 class EUCKRDistributionAnalysis(CharDistributionAnalysis):
     def __init__(self) -> None:
         super().__init__()
@@ -154,7 +130,7 @@ class EUCKRDistributionAnalysis(CharDistributionAnalysis):
         self._table_size = EUCKR_TABLE_SIZE
         self.typical_distribution_ratio = EUCKR_TYPICAL_DISTRIBUTION_RATIO
 
-    def get_order(self, byte_str: Union[bytes, bytearray]) -> int:
+    def get_order(self, byte_str: Union[bytes, bytearray]) -> int:  # type: ignore[reportIncompatibleMethodOverride]
         # for euc-KR encoding, we are interested
         #   first  byte range: 0xb0 -- 0xfe
         #   second byte range: 0xa1 -- 0xfe
@@ -172,7 +148,7 @@ class JOHABDistributionAnalysis(CharDistributionAnalysis):
         self._table_size = EUCKR_TABLE_SIZE
         self.typical_distribution_ratio = EUCKR_TYPICAL_DISTRIBUTION_RATIO
 
-    def get_order(self, byte_str: Union[bytes, bytearray]) -> int:
+    def get_order(self, byte_str: Union[bytes, bytearray]) -> int:  # type: ignore[reportIncompatibleMethodOverride]
         first_char = byte_str[0]
         if 0x88 <= first_char < 0xD4:
             code = first_char * 256 + byte_str[1]
@@ -187,7 +163,7 @@ class GB2312DistributionAnalysis(CharDistributionAnalysis):
         self._table_size = GB2312_TABLE_SIZE
         self.typical_distribution_ratio = GB2312_TYPICAL_DISTRIBUTION_RATIO
 
-    def get_order(self, byte_str: Union[bytes, bytearray]) -> int:
+    def get_order(self, byte_str: Union[bytes, bytearray]) -> int:  # type: ignore[reportIncompatibleMethodOverride]
         # for GB2312 encoding, we are interested
         #  first  byte range: 0xb0 -- 0xfe
         #  second byte range: 0xa1 -- 0xfe
@@ -205,7 +181,7 @@ class Big5DistributionAnalysis(CharDistributionAnalysis):
         self._table_size = BIG5_TABLE_SIZE
         self.typical_distribution_ratio = BIG5_TYPICAL_DISTRIBUTION_RATIO
 
-    def get_order(self, byte_str: Union[bytes, bytearray]) -> int:
+    def get_order(self, byte_str: Union[bytes, bytearray]) -> int:  # type: ignore[reportIncompatibleMethodOverride]
         # for big5 encoding, we are interested
         #   first  byte range: 0xa4 -- 0xfe
         #   second byte range: 0x40 -- 0x7e , 0xa1 -- 0xfe
@@ -225,10 +201,10 @@ class SJISDistributionAnalysis(CharDistributionAnalysis):
         self._table_size = JIS_TABLE_SIZE
         self.typical_distribution_ratio = JIS_TYPICAL_DISTRIBUTION_RATIO
 
-    def get_order(self, byte_str: Union[bytes, bytearray]) -> int:
+    def get_order(self, byte_str: Union[bytes, bytearray]) -> int:  # type: ignore[reportIncompatibleMethodOverride]
         # for sjis encoding, we are interested
         #   first  byte range: 0x81 -- 0x9f , 0xe0 -- 0xfe
-        #   second byte range: 0x40 -- 0x7e,  0x81 -- oxfe
+        #   second byte range: 0x40 -- 0x7e,  0x80 -- 0xfc
         # no validation needed here. State machine has done that
         first_char, second_char = byte_str[0], byte_str[1]
         if 0x81 <= first_char <= 0x9F:
@@ -239,7 +215,7 @@ class SJISDistributionAnalysis(CharDistributionAnalysis):
             return -1
         order = order + second_char - 0x40
         if second_char > 0x7F:
-            order = -1
+            order -= 1  # account for the gap at 0x7F (not a valid SJIS trail byte)
         return order
 
 
@@ -250,7 +226,7 @@ class EUCJPDistributionAnalysis(CharDistributionAnalysis):
         self._table_size = JIS_TABLE_SIZE
         self.typical_distribution_ratio = JIS_TYPICAL_DISTRIBUTION_RATIO
 
-    def get_order(self, byte_str: Union[bytes, bytearray]) -> int:
+    def get_order(self, byte_str: Union[bytes, bytearray]) -> int:  # type: ignore[reportIncompatibleMethodOverride]
         # for euc-JP encoding, we are interested
         #   first  byte range: 0xa0 -- 0xfe
         #   second byte range: 0xa1 -- 0xfe

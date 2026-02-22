@@ -212,10 +212,29 @@ async def compare(version_a: UploadFile = File(...), version_b: UploadFile = Fil
     clause_texts = {}
     definition_changes = []
     term_map = {t.definition_clause_id: t.term for t in tree_b.defined_terms}
+    matched_b_ids: set = set()  # Track which version-B clauses have been aligned
 
     for entry in alignment.entries:
+        # ── DELETED CLAUSE: exists in A but not matched to anything in B ──
         if not entry.new_clause_ids:
+            old_clause = next((c for c in clauses_a if c.clause_id == entry.old_clause_id), None)
+            if old_clause:
+                changes.append(
+                    ChangeSet(
+                        clause_id=old_clause.clause_id,
+                        heading=old_clause.label,
+                        change_type="deleted",
+                        before_text=old_clause.text,
+                        after_text="",
+                        insertions=[],
+                        deletions=[],
+                        substitutions=[],
+                        moved_blocks=[],
+                        table_cell_changes=[],
+                    )
+                )
             continue
+
         old_clause = next((c for c in clauses_a if c.clause_id == entry.old_clause_id), None)
         if not old_clause:
             continue
@@ -223,14 +242,17 @@ async def compare(version_a: UploadFile = File(...), version_b: UploadFile = Fil
             new_clause = clauses_b.get(new_id)
             if not new_clause:
                 continue
+            matched_b_ids.add(new_id)
 
             before = old_clause.text
             after = new_clause.text
             clause_texts[new_clause.clause_id] = after
 
+            # ── MODIFIED CLAUSE: exists in both A and B with differences ──
             change = diff_clause(before, after)
             change.clause_id = new_clause.clause_id
             change.heading = new_clause.label
+            change.change_type = "modified"
             change.before_text = before
             change.after_text = after
             if entry.move_detected:
@@ -247,6 +269,27 @@ async def compare(version_a: UploadFile = File(...), version_b: UploadFile = Fil
                 definition_changes.append(
                     {"term": term_map[new_clause.clause_id], "before": before, "after": after}
                 )
+
+    # ── ADDED CLAUSES: exist in B but were never matched to any A clause ──
+    all_b_ids = set(clauses_b.keys())
+    added_b_ids = all_b_ids - matched_b_ids
+    for b_id in added_b_ids:
+        new_clause = clauses_b[b_id]
+        changes.append(
+            ChangeSet(
+                clause_id=new_clause.clause_id,
+                heading=new_clause.label,
+                change_type="added",
+                before_text="",
+                after_text=new_clause.text,
+                insertions=[],
+                deletions=[],
+                substitutions=[],
+                moved_blocks=[],
+                table_cell_changes=[],
+            )
+        )
+        clause_texts[new_clause.clause_id] = new_clause.text
 
     # Table diff
     table_changes = diff_tables(_table_cells(canonical_a), _table_cells(canonical_b))

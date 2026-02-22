@@ -87,6 +87,7 @@ class ChangeSpan(BaseModel):
 class ChangeSet(BaseModel):
     clause_id: str
     heading: Optional[str] = None
+    change_type: Literal["added", "deleted", "modified"] = "modified"
     before_text: str
     after_text: str
     insertions: List[ChangeSpan]

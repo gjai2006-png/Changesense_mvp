@@ -95,7 +95,7 @@ function renderSegments(segments, keyPrefix) {
   });
 }
 
-export default function DocumentViewer({ change, aiSummary, onClose }) {
+export default function DocumentViewer({ change, aiSummary, onClose, onPrev, onNext, canPrev = false, canNext = false }) {
   const [activeTab, setActiveTab] = useState("side");
   const [syncScroll, setSyncScroll] = useState(true);
   const [showSimilarityInfo, setShowSimilarityInfo] = useState(false);
@@ -225,8 +225,20 @@ export default function DocumentViewer({ change, aiSummary, onClose }) {
   if (loading) {
     return (
       <div className="viewer-backdrop" onClick={onClose}>
-        <div className="viewer-sheet" onClick={(e) => e.stopPropagation()}>
-          <div className="viewer-state">Loading change view...</div>
+        <div className="viewer-shell" onClick={(e) => e.stopPropagation()}>
+          {canPrev && (
+            <button className="viewer-nav viewer-nav-left" onClick={onPrev} aria-label="Previous change">
+              ‹
+            </button>
+          )}
+          {canNext && (
+            <button className="viewer-nav viewer-nav-right" onClick={onNext} aria-label="Next change">
+              ›
+            </button>
+          )}
+          <div className="viewer-sheet">
+            <div className="viewer-state">Loading change view...</div>
+          </div>
         </div>
       </div>
     );
@@ -235,8 +247,20 @@ export default function DocumentViewer({ change, aiSummary, onClose }) {
   if (error) {
     return (
       <div className="viewer-backdrop" onClick={onClose}>
-        <div className="viewer-sheet" onClick={(e) => e.stopPropagation()}>
-          <div className="viewer-error">{error}</div>
+        <div className="viewer-shell" onClick={(e) => e.stopPropagation()}>
+          {canPrev && (
+            <button className="viewer-nav viewer-nav-left" onClick={onPrev} aria-label="Previous change">
+              ‹
+            </button>
+          )}
+          {canNext && (
+            <button className="viewer-nav viewer-nav-right" onClick={onNext} aria-label="Next change">
+              ›
+            </button>
+          )}
+          <div className="viewer-sheet">
+            <div className="viewer-error">{error}</div>
+          </div>
         </div>
       </div>
     );
@@ -244,7 +268,18 @@ export default function DocumentViewer({ change, aiSummary, onClose }) {
 
   return (
     <div className="viewer-backdrop" onClick={onClose}>
-      <div className="viewer-sheet" onClick={(e) => e.stopPropagation()}>
+      <div className="viewer-shell" onClick={(e) => e.stopPropagation()}>
+        {canPrev && (
+          <button className="viewer-nav viewer-nav-left" onClick={onPrev} aria-label="Previous change">
+            ‹
+          </button>
+        )}
+        {canNext && (
+          <button className="viewer-nav viewer-nav-right" onClick={onNext} aria-label="Next change">
+            ›
+          </button>
+        )}
+        <div className="viewer-sheet">
         <header className="viewer-header">
           <div>
             <div className="viewer-id">{change?.heading || "Change"}</div>
@@ -326,6 +361,7 @@ export default function DocumentViewer({ change, aiSummary, onClose }) {
             </section>
           )}
         </main>
+        </div>
       </div>
     </div>
   );

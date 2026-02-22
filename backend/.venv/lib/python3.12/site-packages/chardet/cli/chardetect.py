@@ -12,12 +12,13 @@ If no paths are provided, it takes its input from stdin.
 
 """
 
-
 import argparse
 import sys
-from typing import Iterable, List, Optional
+from collections.abc import Iterable
+from typing import Optional
 
 from .. import __version__
+from ..enums import EncodingEra
 from ..universaldetector import UniversalDetector
 
 
@@ -26,6 +27,7 @@ def description_of(
     name: str = "stdin",
     minimal: bool = False,
     should_rename_legacy: bool = False,
+    encoding_era: EncodingEra = EncodingEra.MODERN_WEB,
 ) -> Optional[str]:
     """
     Return a string describing the probable encoding of a file or
@@ -38,8 +40,12 @@ def description_of(
     :param should_rename_legacy:  Should we rename legacy encodings to
                                   their more modern equivalents?
     :type should_rename_legacy:   ``bool``
+    :param encoding_era:  Which era of encodings to consider during detection.
+    :type encoding_era:   ``EncodingEra``
     """
-    u = UniversalDetector(should_rename_legacy=should_rename_legacy)
+    u = UniversalDetector(
+        should_rename_legacy=should_rename_legacy, encoding_era=encoding_era
+    )
     for line in lines:
         line = bytearray(line)
         u.feed(line)
@@ -51,11 +57,11 @@ def description_of(
     if minimal:
         return result["encoding"]
     if result["encoding"]:
-        return f'{name}: {result["encoding"]} with confidence {result["confidence"]}'
+        return f"{name}: {result['encoding']} with confidence {result['confidence']}"
     return f"{name}: no result"
 
 
-def main(argv: Optional[List[str]] = None) -> None:
+def main(argv: Optional[list[str]] = None) -> None:
     """
     Handles command line arguments and gets things started.
 
@@ -87,10 +93,27 @@ def main(argv: Optional[List[str]] = None) -> None:
         help="Rename legacy encodings to more modern ones.",
         action="store_true",
     )
+    era_names = [e.name for e in EncodingEra if e.name is not None and e.name != "ALL"]
+    parser.add_argument(
+        "-e",
+        "--encoding-era",
+        help="Which era of encodings to consider (default: MODERN_WEB). "
+        f"Choices: {', '.join(era_names)}, ALL",
+        default="MODERN_WEB",
+        type=str.upper,
+    )
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__}"
     )
     args = parser.parse_args(argv)
+
+    try:
+        encoding_era = EncodingEra[args.encoding_era]
+    except KeyError:
+        parser.error(
+            f"invalid encoding era: {args.encoding_era!r}. "
+            f"Choose from: {', '.join(era_names)}, ALL"
+        )
 
     for f in args.input:
         if f.isatty():
@@ -103,7 +126,11 @@ def main(argv: Optional[List[str]] = None) -> None:
             )
         print(
             description_of(
-                f, f.name, minimal=args.minimal, should_rename_legacy=args.legacy
+                f,
+                f.name,
+                minimal=args.minimal,
+                should_rename_legacy=args.legacy,
+                encoding_era=encoding_era,
             )
         )
 

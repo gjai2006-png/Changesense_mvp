@@ -20,9 +20,8 @@
 # Lesser General Public License for more details.
 #
 # You should have received a copy of the GNU Lesser General Public
-# License along with this library; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
-# 02110-1301  USA
+# License along with this library; if not, see
+# <https://www.gnu.org/licenses/>.
 ######################### END LICENSE BLOCK #########################
 
 from typing import Optional, Union
@@ -154,7 +153,7 @@ class HebrewProber(CharSetProber):
     MIN_MODEL_DISTANCE = 0.01
 
     VISUAL_HEBREW_NAME = "ISO-8859-8"
-    LOGICAL_HEBREW_NAME = "windows-1255"
+    LOGICAL_HEBREW_NAME = "WINDOWS-1255"
 
     def __init__(self) -> None:
         super().__init__()

@@ -20,22 +20,26 @@
 # Lesser General Public License for more details.
 #
 # You should have received a copy of the GNU Lesser General Public
-# License along with this library; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
-# 02110-1301  USA
+# License along with this library; if not, see
+# <https://www.gnu.org/licenses/>.
 ######################### END LICENSE BLOCK #########################
 
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 from .charsetprober import CharSetProber
-from .enums import LanguageFilter, ProbingState
+from .enums import EncodingEra, LanguageFilter, ProbingState
 
 
 class CharSetGroupProber(CharSetProber):
-    def __init__(self, lang_filter: LanguageFilter = LanguageFilter.NONE) -> None:
-        super().__init__(lang_filter=lang_filter)
+    def __init__(
+        self,
+        *,
+        lang_filter: LanguageFilter = LanguageFilter.ALL,
+        encoding_era: EncodingEra = EncodingEra.ALL,
+    ) -> None:
+        super().__init__(lang_filter=lang_filter, encoding_era=encoding_era)
         self._active_num = 0
-        self.probers: List[CharSetProber] = []
+        self.probers: list[CharSetProber] = []
         self._best_guess_prober: Optional[CharSetProber] = None
 
     def reset(self) -> None:
@@ -104,3 +108,40 @@ class CharSetGroupProber(CharSetProber):
         if not self._best_guess_prober:
             return 0.0
         return best_conf
+
+    def _filter_probers(self, probers: list[CharSetProber]) -> list[CharSetProber]:
+        """Filter probers based on encoding era and language."""
+        filtered = []
+
+        for prober in probers:
+            # Skip meta-probers like HebrewProber that manage sub-probers
+            # They should always be included as they'll internally select appropriate sub-probers
+            if getattr(prober, "_logical_prober", None) is not None:
+                filtered.append(prober)
+                continue
+
+            # Skip sub-probers that defer naming to a meta-prober (e.g., Hebrew logical/visual)
+            # These need to stay with their parent meta-prober regardless of filtering
+            if getattr(prober, "_name_prober", None) is not None:
+                filtered.append(prober)
+                continue
+
+            # Get charset metadata for filtering
+            charset = prober.charset
+
+            # Skip probers without charset metadata
+            if charset is None:
+                filtered.append(prober)
+                continue
+
+            # Check encoding era filtering
+            if charset.encoding_era not in self.encoding_era:
+                continue
+
+            # Check language filtering
+            if charset.language_filter not in self.lang_filter:
+                continue
+
+            filtered.append(prober)
+
+        return filtered

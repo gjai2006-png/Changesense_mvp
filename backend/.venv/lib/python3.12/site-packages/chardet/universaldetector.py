@@ -21,9 +21,8 @@
 # Lesser General Public License for more details.
 #
 # You should have received a copy of the GNU Lesser General Public
-# License along with this library; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
-# 02110-1301  USA
+# License along with this library; if not, see
+# <https://www.gnu.org/licenses/>.
 ######################### END LICENSE BLOCK #########################
 """
 Module containing the UniversalDetector detector class, which is the primary
@@ -35,21 +34,19 @@ class a user of ``chardet`` should use.
 :author: Ian Cordasco
 """
 
-
 import codecs
 import logging
 import re
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 from .charsetgroupprober import CharSetGroupProber
 from .charsetprober import CharSetProber
-from .enums import InputState, LanguageFilter, ProbingState
+from .enums import EncodingEra, InputState, LanguageFilter, ProbingState
 from .escprober import EscCharSetProber
-from .latin1prober import Latin1Prober
-from .macromanprober import MacRomanProber
 from .mbcsgroupprober import MBCSGroupProber
+from .metadata.charsets import get_charset, is_unicode_encoding
 from .resultdict import ResultDict
-from .sbcsgroupprober import SBCSGroupProber
+from .sbcsgroupprober import ISO_WIN_MAP, SBCSGroupProber
 from .utf1632prober import UTF1632Prober
 
 
@@ -71,40 +68,42 @@ class UniversalDetector:
     """
 
     MINIMUM_THRESHOLD = 0.20
-    HIGH_BYTE_DETECTOR = re.compile(b"[\x80-\xFF]")
+    HIGH_BYTE_DETECTOR = re.compile(b"[\x80-\xff]")
     ESC_DETECTOR = re.compile(b"(\033|~{)")
-    WIN_BYTE_DETECTOR = re.compile(b"[\x80-\x9F]")
-    ISO_WIN_MAP = {
-        "iso-8859-1": "Windows-1252",
-        "iso-8859-2": "Windows-1250",
-        "iso-8859-5": "Windows-1251",
-        "iso-8859-6": "Windows-1256",
-        "iso-8859-7": "Windows-1253",
-        "iso-8859-8": "Windows-1255",
-        "iso-8859-9": "Windows-1254",
-        "iso-8859-13": "Windows-1257",
-    }
+    # Threshold for "very close" confidence scores where era preference applies
+    VERY_CLOSE_THRESHOLD = 0.005  # 0.5%
+
+    # Map ISO encodings to their Windows equivalents (imported from sbcsgroupprober)
+    ISO_WIN_MAP = ISO_WIN_MAP
+
     # Based on https://encoding.spec.whatwg.org/#names-and-labels
-    # but altered to match Python names for encodings and remove mappings
-    # that break tests.
+    # Maps legacy encoding names to their modern/superset equivalents.
+    # Uses Python's canonical codec names (case-insensitive).
     LEGACY_MAP = {
-        "ascii": "Windows-1252",
-        "iso-8859-1": "Windows-1252",
-        "tis-620": "ISO-8859-11",
-        "iso-8859-9": "Windows-1254",
-        "gb2312": "GB18030",
-        "euc-kr": "CP949",
-        "utf-16le": "UTF-16",
+        "ascii": "Windows-1252",  # ASCII is subset of Windows-1252
+        "euc-kr": "CP949",  # EUC-KR extended by CP949 (aka Windows-949)
+        "iso-8859-1": "Windows-1252",  # Latin-1 extended by Windows-1252
+        "iso-8859-2": "Windows-1250",  # Central European
+        "iso-8859-5": "Windows-1251",  # Cyrillic
+        "iso-8859-6": "Windows-1256",  # Arabic
+        "iso-8859-7": "Windows-1253",  # Greek
+        "iso-8859-8": "Windows-1255",  # Hebrew
+        "iso-8859-9": "Windows-1254",  # Turkish
+        "iso-8859-11": "CP874",  # Thai, extended by CP874 (aka Windows-874)
+        "iso-8859-13": "Windows-1257",  # Baltic
+        "tis-620": "CP874",  # Thai, equivalent to Windows-874
     }
 
     def __init__(
         self,
         lang_filter: LanguageFilter = LanguageFilter.ALL,
-        should_rename_legacy: bool = False,
+        should_rename_legacy: bool | None = None,
+        encoding_era: EncodingEra = EncodingEra.MODERN_WEB,
+        max_bytes: int = 200_000,
     ) -> None:
         self._esc_charset_prober: Optional[EscCharSetProber] = None
         self._utf1632_prober: Optional[UTF1632Prober] = None
-        self._charset_probers: List[CharSetProber] = []
+        self._charset_probers: list[CharSetProber] = []
         self.result: ResultDict = {
             "encoding": None,
             "confidence": 0.0,
@@ -116,8 +115,12 @@ class UniversalDetector:
         self._last_char = b""
         self.lang_filter = lang_filter
         self.logger = logging.getLogger(__name__)
-        self._has_win_bytes = False
+        if should_rename_legacy is None:
+            should_rename_legacy = encoding_era == EncodingEra.MODERN_WEB
         self.should_rename_legacy = should_rename_legacy
+        self.encoding_era = encoding_era
+        self._total_bytes_fed = 0
+        self.max_bytes = max_bytes
         self.reset()
 
     @property
@@ -126,11 +129,108 @@ class UniversalDetector:
 
     @property
     def has_win_bytes(self) -> bool:
-        return self._has_win_bytes
+        """Check if Windows-specific bytes were detected by the SBCS prober."""
+        for prober in self._charset_probers:
+            if isinstance(prober, SBCSGroupProber):
+                return prober._has_win_bytes
+        return False
 
     @property
-    def charset_probers(self) -> List[CharSetProber]:
+    def charset_probers(self) -> list[CharSetProber]:
         return self._charset_probers
+
+    @property
+    def nested_probers(self) -> list[CharSetProber]:
+        """Get a flat list of all nested charset probers."""
+        nested = []
+        for prober in self._charset_probers:
+            if isinstance(prober, CharSetGroupProber):
+                nested.extend(getattr(prober, "probers", []))
+            else:
+                nested.append(prober)
+        return nested
+
+    @property
+    def active_probers(self) -> list[CharSetProber]:
+        """Get a flat list of all active (not falsey and not in NOT_ME state) nested charset probers."""
+        return [prober for prober in self.nested_probers if prober and prober.active]
+
+    def _apply_encoding_heuristics(
+        self, charset_name: str, confidence: float, winning_prober: CharSetProber
+    ) -> tuple[str, float]:
+        """
+        Apply heuristic adjustments to the winning encoding based on:
+        1. Encoding era preferences (prefer newer/Unicode encodings)
+        2. Mac/Windows/ISO byte pattern disambiguation
+
+        Collects all close-confidence alternatives in a single pass and picks
+        the best one by era preference and Unicode preference.
+
+        Returns: (adjusted_charset_name, adjusted_confidence)
+        """
+        lower_charset_name = charset_name.lower()
+        winner_charset = get_charset(lower_charset_name)
+        winner_era = winner_charset.encoding_era.value
+        winner_is_unicode = is_unicode_encoding(lower_charset_name)
+        min_confidence = confidence * (1 - self.VERY_CLOSE_THRESHOLD)
+
+        # Collect all close-confidence alternatives that would be preferred
+        best_alt_name = None
+        best_alt_confidence = confidence
+        best_alt_era = winner_era
+        best_alt_is_unicode = winner_is_unicode
+
+        for prober in self._charset_probers:
+            if not prober or not prober.active or prober == winning_prober:
+                continue
+
+            alt_charset_name = (prober.charset_name or "").lower()
+            if not alt_charset_name:
+                continue
+
+            alt_confidence = prober.get_confidence()
+            if alt_confidence < min_confidence:
+                continue
+
+            alt_charset = get_charset(alt_charset_name)
+            alt_era = alt_charset.encoding_era.value
+            alt_is_unicode = is_unicode_encoding(alt_charset_name)
+
+            # Check if this alternative is preferred over the current best
+            prefer_over_best = False
+            if alt_era < best_alt_era:
+                prefer_over_best = True
+            elif alt_era == best_alt_era and alt_is_unicode and not best_alt_is_unicode:
+                prefer_over_best = True
+
+            if prefer_over_best:
+                best_alt_name = alt_charset_name
+                best_alt_confidence = alt_confidence
+                best_alt_era = alt_era
+                best_alt_is_unicode = alt_is_unicode
+
+        if best_alt_name is not None:
+            self.logger.debug(
+                "Era preference: %s (era %s, unicode=%s) preferred over %s",
+                best_alt_name,
+                best_alt_era,
+                best_alt_is_unicode,
+                charset_name,
+            )
+            charset_name = best_alt_name
+            confidence = best_alt_confidence
+
+        return charset_name, confidence
+
+    def _get_utf8_prober(self) -> Optional[CharSetProber]:
+        """
+        Get the UTF-8 prober from the charset probers.
+        Returns None if not found.
+        """
+        for prober in self.nested_probers:
+            if prober.charset_name and "utf-8" in prober.charset_name.lower():
+                return prober
+        return None
 
     def reset(self) -> None:
         """
@@ -141,9 +241,9 @@ class UniversalDetector:
         self.result = {"encoding": None, "confidence": 0.0, "language": None}
         self.done = False
         self._got_data = False
-        self._has_win_bytes = False
         self._input_state = InputState.PURE_ASCII
         self._last_char = b""
+        self._total_bytes_fed = 0
         if self._esc_charset_prober:
             self._esc_charset_prober.reset()
         if self._utf1632_prober:
@@ -188,26 +288,73 @@ class UniversalDetector:
                 # FF FE 00 00  UTF-32, little-endian BOM
                 # 00 00 FE FF  UTF-32, big-endian BOM
                 self.result = {"encoding": "UTF-32", "confidence": 1.0, "language": ""}
-            elif byte_str.startswith(b"\xFE\xFF\x00\x00"):
-                # FE FF 00 00  UCS-4, unusual octet order BOM (3412)
-                self.result = {
-                    # TODO: This encoding is not supported by Python. Should remove?
-                    "encoding": "X-ISO-10646-UCS-4-3412",
-                    "confidence": 1.0,
-                    "language": "",
-                }
-            elif byte_str.startswith(b"\x00\x00\xFF\xFE"):
-                # 00 00 FF FE  UCS-4, unusual octet order BOM (2143)
-                self.result = {
-                    # TODO: This encoding is not supported by Python. Should remove?
-                    "encoding": "X-ISO-10646-UCS-4-2143",
-                    "confidence": 1.0,
-                    "language": "",
-                }
-            elif byte_str.startswith((codecs.BOM_LE, codecs.BOM_BE)):
+            elif byte_str.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
                 # FF FE  UTF-16, little endian BOM
                 # FE FF  UTF-16, big endian BOM
                 self.result = {"encoding": "UTF-16", "confidence": 1.0, "language": ""}
+            else:
+                # Binary file detection - check for excessive null bytes early
+                # But UTF-16/32 have null bytes, so check for patterns first
+
+                # Check for no-BOM UTF-16/32 patterns (alternating nulls)
+                # UTF-32LE: XX 00 00 00 pattern (every 4th byte is null)
+                # UTF-32BE: 00 00 00 XX pattern (first 3 of 4 bytes are null)
+                # UTF-16LE: XX 00 pattern (every other byte is null in odd positions)
+                # UTF-16BE: 00 XX pattern (every other byte is null in even positions)
+                looks_like_utf16_32 = False
+
+                # Use larger sample for better pattern detection
+                sample_size = min(len(byte_str), 200)
+                if sample_size >= 50:
+                    sample = byte_str[:sample_size]
+
+                    # Count nulls in even and odd positions (for UTF-16 detection)
+                    even_nulls = sum(
+                        1 for i in range(0, sample_size, 2) if sample[i] == 0
+                    )
+                    odd_nulls = sum(
+                        1 for i in range(1, sample_size, 2) if sample[i] == 0
+                    )
+
+                    # Check for UTF-32 patterns (more nulls in groups of 4)
+                    # For UTF-32LE: positions 1,2,3 of every 4 bytes might be null
+                    # For UTF-32BE: positions 0,1,2 of every 4 bytes might be null
+                    if sample_size >= 100:
+                        mod1_nulls = sum(
+                            1 for i in range(1, sample_size, 4) if sample[i] == 0
+                        )
+                        mod2_nulls = sum(
+                            1 for i in range(2, sample_size, 4) if sample[i] == 0
+                        )
+                        mod3_nulls = sum(
+                            1 for i in range(3, sample_size, 4) if sample[i] == 0
+                        )
+
+                        # Strong UTF-32 signal: consistent null pattern in 2+ of the 3 positions
+                        utf32_nulls = [mod1_nulls, mod2_nulls, mod3_nulls]
+                        if sum(n > sample_size // 8 for n in utf32_nulls) >= 2:
+                            looks_like_utf16_32 = True
+
+                    # UTF-16 detection: significant nulls in even OR odd positions
+                    # Lower threshold: 12% of positions (24 out of 200)
+                    utf16_threshold = sample_size // 16
+                    if even_nulls > utf16_threshold or odd_nulls > utf16_threshold:
+                        looks_like_utf16_32 = True
+
+                if not looks_like_utf16_32:
+                    # Sample first 8KB to detect binary files
+                    check_size = min(len(byte_str), 8192)
+                    null_count = byte_str[:check_size].count(0)
+
+                    if null_count > check_size * 0.1:  # >10% null bytes
+                        # Likely a binary file, not text
+                        self.result = {
+                            "encoding": None,
+                            "confidence": 0.0,
+                            "language": "",
+                        }
+                        self.done = True
+                        return
 
             self._got_data = True
             if self.result["encoding"] is not None:
@@ -226,6 +373,14 @@ class UniversalDetector:
                 self._input_state = InputState.ESC_ASCII
 
         self._last_char = byte_str[-1:]
+
+        # Track total bytes processed
+        self._total_bytes_fed += len(byte_str)
+
+        # Stop processing after processing enough data
+        # Don't set done=True here, let close() finalize the result
+        if self._total_bytes_fed > self.max_bytes:
+            return
 
         # next we will look to see if it is appears to be either a UTF-16 or
         # UTF-32 encoding
@@ -264,23 +419,33 @@ class UniversalDetector:
         # bigram distributions.
         elif self._input_state == InputState.HIGH_BYTE:
             if not self._charset_probers:
-                self._charset_probers = [MBCSGroupProber(self.lang_filter)]
+                self._charset_probers = [
+                    MBCSGroupProber(
+                        lang_filter=self.lang_filter, encoding_era=self.encoding_era
+                    )
+                ]
                 # If we're checking non-CJK encodings, use single-byte prober
                 if self.lang_filter & LanguageFilter.NON_CJK:
-                    self._charset_probers.append(SBCSGroupProber())
-                self._charset_probers.append(Latin1Prober())
-                self._charset_probers.append(MacRomanProber())
+                    self._charset_probers.append(
+                        SBCSGroupProber(
+                            encoding_era=self.encoding_era, lang_filter=self.lang_filter
+                        )
+                    )
             for prober in self._charset_probers:
                 if prober.feed(byte_str) == ProbingState.FOUND_IT:
+                    charset_name = prober.charset_name
+                    # Rename legacy encodings if requested
+                    if self.should_rename_legacy:
+                        charset_name = self.LEGACY_MAP.get(
+                            (charset_name or "").lower(), charset_name
+                        )
                     self.result = {
-                        "encoding": prober.charset_name,
+                        "encoding": charset_name,
                         "confidence": prober.get_confidence(),
                         "language": prober.language,
                     }
                     self.done = True
                     break
-            if self.WIN_BYTE_DETECTOR.search(byte_str):
-                self._has_win_bytes = True
 
     def close(self) -> ResultDict:
         """
@@ -302,6 +467,25 @@ class UniversalDetector:
         elif self._input_state == InputState.PURE_ASCII:
             self.result = {"encoding": "ascii", "confidence": 1.0, "language": ""}
 
+        # Check if escape prober found anything
+        elif self._input_state == InputState.ESC_ASCII:
+            if self._esc_charset_prober:
+                charset_name = self._esc_charset_prober.charset_name
+                if charset_name:
+                    self.result = {
+                        "encoding": charset_name,
+                        "confidence": self._esc_charset_prober.get_confidence(),
+                        "language": self._esc_charset_prober.language,
+                    }
+                else:
+                    # ESC prober didn't identify a specific encoding
+                    # Since input is pure ASCII + ESC, default to UTF-8
+                    self.result = {
+                        "encoding": "utf-8",
+                        "confidence": 1.0,
+                        "language": "",
+                    }
+
         # If we have seen non-ASCII, return the best that met MINIMUM_THRESHOLD
         elif self._input_state == InputState.HIGH_BYTE:
             prober_confidence = None
@@ -319,13 +503,24 @@ class UniversalDetector:
                 assert charset_name is not None
                 lower_charset_name = charset_name.lower()
                 confidence = max_prober.get_confidence()
-                # Use Windows encoding name instead of ISO-8859 if we saw any
-                # extra Windows-specific bytes
-                if lower_charset_name.startswith("iso-8859"):
-                    if self._has_win_bytes:
-                        charset_name = self.ISO_WIN_MAP.get(
-                            lower_charset_name, charset_name
-                        )
+
+                # Find the actual winning nested prober (max_prober might be a group prober)
+                winning_nested_prober = None
+                for prober in self.nested_probers:
+                    if (
+                        prober
+                        and prober.active
+                        and prober.charset_name
+                        and prober.charset_name.lower() == lower_charset_name
+                        and abs(prober.get_confidence() - confidence) < 0.0001
+                    ):
+                        winning_nested_prober = prober
+                        break
+
+                # Apply heuristic adjustments in a single pass over active probers
+                charset_name, confidence = self._apply_encoding_heuristics(
+                    charset_name, confidence, winning_nested_prober or max_prober
+                )
                 # Rename legacy encodings with superset encodings if asked
                 if self.should_rename_legacy:
                     charset_name = self.LEGACY_MAP.get(
@@ -336,27 +531,37 @@ class UniversalDetector:
                     "confidence": confidence,
                     "language": max_prober.language,
                 }
+            else:
+                # Default to UTF-8 if no encoding met threshold AND UTF-8 prober
+                # hasn't determined this is NOT UTF-8
+                # UTF-8 is now the most common encoding on the web and a superset of ASCII
+                utf8_prober = self._get_utf8_prober()
+                if utf8_prober and utf8_prober.active:
+                    # UTF-8 prober didn't rule it out, so default to UTF-8
+                    self.result = {
+                        "encoding": utf8_prober.charset_name,
+                        "confidence": utf8_prober.get_confidence(),
+                        "language": utf8_prober.language,
+                    }
+                else:
+                    # UTF-8 was ruled out, return None
+                    self.result = {
+                        "encoding": None,
+                        "confidence": 0.0,
+                        "language": None,
+                    }
 
         # Log all prober confidences if none met MINIMUM_THRESHOLD
         if self.logger.getEffectiveLevel() <= logging.DEBUG:
             if self.result["encoding"] is None:
                 self.logger.debug("no probers hit minimum threshold")
-                for group_prober in self._charset_probers:
-                    if not group_prober:
+                for prober in self.nested_probers:
+                    if not prober:
                         continue
-                    if isinstance(group_prober, CharSetGroupProber):
-                        for prober in group_prober.probers:
-                            self.logger.debug(
-                                "%s %s confidence = %s",
-                                prober.charset_name,
-                                prober.language,
-                                prober.get_confidence(),
-                            )
-                    else:
-                        self.logger.debug(
-                            "%s %s confidence = %s",
-                            group_prober.charset_name,
-                            group_prober.language,
-                            group_prober.get_confidence(),
-                        )
+                    self.logger.debug(
+                        "%s %s confidence = %s",
+                        prober.charset_name,
+                        prober.language,
+                        prober.get_confidence(),
+                    )
         return self.result

@@ -1,4 +1,4 @@
-#!/Users/jaiaakash/Desktop/Changesense/backend/.venv/bin/python
+#!/mnt/d/ChangeSense/Changesense_mvp/backend/.venv/bin/python3
 """Extract pdf structure in XML format"""
 import logging
 import os.path

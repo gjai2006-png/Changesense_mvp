@@ -20,19 +20,17 @@
 # Lesser General Public License for more details.
 #
 # You should have received a copy of the GNU Lesser General Public
-# License along with this library; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
-# 02110-1301  USA
+# License along with this library; if not, see
+# <https://www.gnu.org/licenses/>.
 ######################### END LICENSE BLOCK #########################
 
 from typing import Optional, Union
 
 from .charsetprober import CharSetProber
 from .codingstatemachine import CodingStateMachine
-from .enums import LanguageFilter, MachineState, ProbingState
+from .enums import EncodingEra, LanguageFilter, MachineState, ProbingState
 from .escsm import (
     HZ_SM_MODEL,
-    ISO2022CN_SM_MODEL,
     ISO2022JP_SM_MODEL,
     ISO2022KR_SM_MODEL,
 )
@@ -45,12 +43,15 @@ class EscCharSetProber(CharSetProber):
     identify these encodings.
     """
 
-    def __init__(self, lang_filter: LanguageFilter = LanguageFilter.NONE) -> None:
-        super().__init__(lang_filter=lang_filter)
+    def __init__(
+        self,
+        lang_filter: LanguageFilter = LanguageFilter.ALL,
+        encoding_era: EncodingEra = EncodingEra.ALL,
+    ) -> None:
+        super().__init__(lang_filter=lang_filter, encoding_era=encoding_era)
         self.coding_sm = []
         if self.lang_filter & LanguageFilter.CHINESE_SIMPLIFIED:
             self.coding_sm.append(CodingStateMachine(HZ_SM_MODEL))
-            self.coding_sm.append(CodingStateMachine(ISO2022CN_SM_MODEL))
         if self.lang_filter & LanguageFilter.JAPANESE:
             self.coding_sm.append(CodingStateMachine(ISO2022JP_SM_MODEL))
         if self.lang_filter & LanguageFilter.KOREAN:

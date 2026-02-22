@@ -173,6 +173,15 @@ export default function App() {
     });
   }, [integrity?.integrity_alerts, clauseMap]);
 
+  const viewerSequence = useMemo(() => {
+    const items = [];
+    (compare?.clauses?.modified || []).forEach((change) => items.push({ change, type: "modified" }));
+    (compare?.clauses?.added || []).forEach((change) => items.push({ change, type: "added" }));
+    (compare?.clauses?.deleted || []).forEach((change) => items.push({ change, type: "deleted" }));
+    integrityItems.forEach((change) => items.push({ change, type: "integrity" }));
+    return items;
+  }, [compare?.clauses, integrityItems]);
+
   const flattenClauseTree = (node, acc = {}) => {
     if (!node) return acc;
     if (node.clause_id && node.label && node.clause_id !== "root") {
@@ -343,6 +352,20 @@ export default function App() {
       before_text: change.before ?? base.before ?? base.before_text ?? "",
       after_text: change.after ?? base.after ?? base.after_text ?? "",
     });
+  };
+
+  const viewerSequenceKey = (item) => `${item?.type || "modified"}::${item?.clause_id || item?.id || ""}`;
+
+  const currentViewerIndex = useMemo(() => {
+    if (!viewerChange) return -1;
+    const key = viewerSequenceKey(viewerChange);
+    return viewerSequence.findIndex(({ change, type }) => viewerSequenceKey({ ...change, type }) === key);
+  }, [viewerChange, viewerSequence]);
+
+  const openViewerAtIndex = (index) => {
+    const target = viewerSequence[index];
+    if (!target) return;
+    openViewer(target.change, target.type);
   };
 
   const showLanding = !compare && !loading;
@@ -525,7 +548,19 @@ export default function App() {
       )}
 
       {viewerChange && (
-        <DocumentViewer change={viewerChange} aiSummary={aiSummary} onClose={() => setViewerChange(null)} />
+        <DocumentViewer
+          change={viewerChange}
+          aiSummary={aiSummary}
+          onClose={() => setViewerChange(null)}
+          onPrev={currentViewerIndex > 0 ? () => openViewerAtIndex(currentViewerIndex - 1) : null}
+          onNext={
+            currentViewerIndex >= 0 && currentViewerIndex < viewerSequence.length - 1
+              ? () => openViewerAtIndex(currentViewerIndex + 1)
+              : null
+          }
+          canPrev={currentViewerIndex > 0}
+          canNext={currentViewerIndex >= 0 && currentViewerIndex < viewerSequence.length - 1}
+        />
       )}
     </div>
   );

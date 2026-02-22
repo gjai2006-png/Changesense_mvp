@@ -1,11 +1,136 @@
-1. Definitions
-"Closing Date" means February 1, 2026.
+STOCK PURCHASE AGREEMENT
 
-2. Payment Terms
-Buyer shall pay $6,000,000 within 7 days of Closing. [tracked]
+This Stock Purchase Agreement (the "Agreement") is entered into as of March 15, 2024, by and between:
 
-3. Confidentiality
-Each Party shall disclose information only to its advisors.
+SELLER: TechVentures Inc., a Delaware corporation ("Seller")
+BUYER: Global Acquisitions Corp., a Delaware corporation ("Buyer")
 
-5. Termination
-Either Party may terminate upon 15 days' notice.
+RECITALS
+
+WHEREAS, Seller owns 100% of the outstanding shares of DataHub Solutions LLC ("Target Company");
+WHEREAS, Buyer desires to purchase and Seller desires to sell all of the outstanding shares of Target Company.
+
+NOW, THEREFORE, in consideration of the mutual covenants and agreements herein contained, the parties agree as follows:
+
+1. DEFINITIONS
+
+1.1 "Purchase Price" means the total consideration payable by Buyer to Seller for the Shares, including both cash and stock consideration.
+
+1.2 "Closing Date" means the date on which the transactions contemplated by this Agreement are consummated.
+
+1.3 "Material Adverse Effect" means any event, change, or effect that is materially adverse to the business, assets, financial condition, or prospects of the Target Company.
+
+1.4 "Knowledge" means the actual knowledge of the executive officers and senior management of the respective party after reasonable inquiry.
+
+1.5 "Earnout Period" means the twelve-month period following the Closing Date.
+
+2. PURCHASE AND SALE OF SHARES
+
+2.1 Purchase and Sale. Subject to the terms and conditions of this Agreement, Seller shall sell, transfer, and deliver to Buyer, and Buyer shall purchase from Seller, all of the issued and outstanding shares of capital stock of Target Company (the "Shares").
+
+2.2 Purchase Price. The aggregate purchase price for the Shares shall be Fifty-Five Million Dollars ($55,000,000), payable as follows:
+
+(a) At Closing, Buyer shall pay to Seller Forty Million Dollars ($40,000,000) in cash;
+(b) Within 120 days after Closing, Buyer shall pay to Seller Ten Million Dollars ($10,000,000) as a holdback amount;
+(c) Buyer shall issue to Seller shares of Buyer's common stock valued at Five Million Dollars ($5,000,000).
+
+2.3 Adjustments. The Purchase Price shall be adjusted based on the working capital and net debt of Target Company as of the Closing Date, as determined in accordance with Section 2.4.
+
+2.4 Working Capital Adjustment. Any adjustment under Section 2.3 shall be calculated within 60 days of Closing.
+
+3. CLOSING
+
+3.1 Closing Date. The closing of the transactions contemplated by this Agreement (the "Closing") shall take place on April 15, 2024, or such other date as the parties may mutually agree in writing.
+
+3.2 Deliveries by Seller. At the Closing, Seller shall deliver to Buyer:
+
+(a) Stock certificates representing the Shares, duly endorsed;
+(b) Certified copies of resolutions of Seller's board of directors and stockholders approving this Agreement;
+(c) A certificate of good standing for Target Company;
+(d) Employment agreements with key employees of Target Company.
+
+4. REPRESENTATIONS AND WARRANTIES OF SELLER
+
+4.1 Organization. Target Company is a limited liability company duly organized, validly existing, and in good standing under the laws of Delaware and qualified to do business in all jurisdictions where required.
+
+4.2 Financial Statements. The audited financial statements of Target Company fairly present in all material respects the financial condition of Target Company as of December 31, 2023.
+
+4.3 No Material Adverse Change. Since December 31, 2023, there has been no Material Adverse Effect with respect to Target Company.
+
+4.4 Compliance with Laws. Target Company is in material compliance with all applicable laws and regulations.
+
+4.5 Intellectual Property. Target Company owns or has valid licenses to all intellectual property necessary for its business operations.
+
+5. COVENANTS
+
+5.1 Conduct of Business. From the date of this Agreement until the Closing Date, Seller shall cause Target Company to conduct its business in the ordinary course consistent with past practice.
+
+5.2 Access to Information. Seller shall provide Buyer with reasonable access to the books, records, and facilities of Target Company.
+
+5.3 Confidentiality. Buyer shall maintain the confidentiality of all non-public information received from Seller regarding Target Company for a period of 5 years.
+
+5.4 Non-Competition. For a period of 5 years following the Closing Date, Seller shall not compete with the business of Target Company within North America.
+
+6. CONDITIONS TO CLOSING
+
+6.1 Conditions to Buyer's Obligations. The obligations of Buyer to consummate the Closing are subject to:
+
+(a) The representations and warranties of Seller being true and correct in all material respects as of the Closing Date;
+(b) Seller having performed all covenants required to be performed by Seller;
+(c) No material litigation pending or threatened against Target Company;
+(d) Receipt of required regulatory approvals.
+
+6.2 Conditions to Seller's Obligations. The obligations of Seller to consummate the Closing are subject to:
+
+(a) The representations and warranties of Buyer being true and correct in all material respects;
+(b) Buyer having obtained all necessary financing commitments.
+
+7. INDEMNIFICATION
+
+7.1 Indemnification by Seller. Seller shall indemnify and hold harmless Buyer and its affiliates from and against any losses arising from:
+
+(a) Any breach of any representation or warranty made by Seller in this Agreement;
+(b) Any failure by Seller to perform any covenant or agreement under this Agreement;
+(c) Any undisclosed liabilities of Target Company;
+(d) Any tax liabilities relating to pre-Closing periods.
+
+7.2 Indemnification Cap. The total liability of Seller under Section 7.1 shall not exceed 20% of the Purchase Price, except for breaches of fundamental representations.
+
+7.3 Survival Period. The representations and warranties shall survive for 24 months following the Closing Date, except for tax and environmental representations which shall survive for 4 years.
+
+7.4 Claims Procedure. Any indemnification claims must be made in accordance with the procedures set forth in Section 7.5.
+
+8. PAYMENT SCHEDULE
+
+The following payment schedule shall apply:
+
+Payment Event          | Amount               | Due Date
+Initial Payment       | $40,000,000          | At Closing
+Stock Consideration   | $5,000,000           | At Closing
+Holdback Release      | $10,000,000          | 120 days post-Closing
+Earnout Payment       | Up to $5,000,000     | December 31, 2024
+
+
+(d) By Seller if Buyer fails to obtain financing by May 31, 2024.
+
+10. MISCELLANEOUS
+
+10.1 Governing Law. This Agreement shall be governed by and construed in accordance with the laws of the State of Delaware, without regard to conflicts of law principles.
+
+10.2 Notices. All notices under this Agreement shall be in writing and delivered by certified mail, email, or overnight courier.
+
+10.3 Entire Agreement. This Agreement, together with the schedules and exhibits hereto, constitutes the entire agreement between the parties.
+
+10.4 Amendment. This Agreement may be amended only by written agreement signed by both parties.
+
+10.5 Dispute Resolution. Any disputes arising under this Agreement shall be resolved through binding arbitration in Wilmington, Delaware.
+
+11. POST-CLOSING COVENANTS
+
+11.1 Transition Services. For a period of 90 days following the Closing Date, Seller shall provide reasonable transition services to Buyer to facilitate the orderly transfer of the business operations of Target Company.
+
+11.2 Employee Retention. Buyer agrees to offer employment to all employees of Target Company on substantially similar terms for a period of at least 12 months following the Closing Date.
+
+11.3 Use of Name. Seller grants Buyer a non-exclusive, royalty-free license to use the "TechVentures" trade name for a period of 6 months following Closing solely for transition purposes.
+
+IN WITNESS WHEREOF, the parties have executed this Agreement as of the date first written above.
