@@ -7,12 +7,16 @@ from .utils import tokenize_legal
 HEADING_RE = re.compile(r"^\s*(\d+(?:\.\d+)*|[IVX]+|[A-Z])\s*[\).]\s+(.*)$")
 
 
-def _make_node(idx: int, label: str, text: str, span, node_type: str = "section") -> ClauseNode:
+def _normalize_heading_title(title: str) -> str:
+    return re.sub(r"\s+", " ", (title or "").strip())
+
+
+def _make_node(idx: int, label: str, text: str, span, node_type: str = "section", path: str | None = None) -> ClauseNode:
     return ClauseNode(
         clause_id=f"clause-{idx}",
         type=node_type,
         label=label,
-        path=label,
+        path=path or label,
         text=text,
         text_tokens=tokenize_legal(text),
         source_span=span,
@@ -42,7 +46,14 @@ def build_clause_tree(blocks) -> ClauseTree:
         nonlocal idx, buffer_text, buffer_span, current_node
         if current_node and buffer_text.strip():
             idx += 1
-            node = _make_node(idx, current_node["label"], buffer_text.strip(), buffer_span, current_node["type"])
+            node = _make_node(
+                idx,
+                current_node["label"],
+                buffer_text.strip(),
+                buffer_span,
+                current_node["type"],
+                path=current_node.get("path"),
+            )
             root.children.append(node)
             current_node = None
             buffer_text = ""
@@ -66,10 +77,11 @@ def build_clause_tree(blocks) -> ClauseTree:
         m = HEADING_RE.match(block.text)
         if m:
             flush()
-            label = m.group(1)
-            heading_text = m.group(2)
+            section_number = m.group(1)
+            heading_text = _normalize_heading_title(m.group(2))
             node_type = "definition" if heading_text.lower().startswith("definitions") else "section"
-            current_node = {"label": label, "type": node_type}
+            display_label = heading_text or f"Section {section_number}"
+            current_node = {"label": display_label, "path": section_number, "type": node_type}
             buffer_text = block.text
             buffer_span = block.span
             continue

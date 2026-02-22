@@ -262,6 +262,7 @@ export default function App() {
         after: change.after_text || "",
         before_text: change.before_text || "",
         after_text: change.after_text || "",
+        word_diffs: change.word_diffs || null,
         similarity: 1.0, // Default similarity
         risk_tags: [],
       };
@@ -292,7 +293,9 @@ export default function App() {
       added_count: added.length,
       deleted_count: deleted.length,
       high_risk_count: risks.length,
-      obligation_shift_count: risks.filter((r) => r.risk_tags.includes("obligation")).length,
+      obligation_shift_count: risks.filter((r) =>
+        (r.risk_tags || []).some((tag) => /obligation/i.test(String(tag)))
+      ).length,
     };
     
     return {
@@ -477,14 +480,30 @@ export default function App() {
             {aiSummary && !aiSummary.error && aiSummary?.summaries?.length === 0 && (
               <div className="empty-line">No AI summary returned.</div>
             )}
-            {aiSummary?.summaries?.map((summary, idx) => (
-              <article key={`ai-${idx}`} className="change-card">
-                <h4>{summary.type}</h4>
-                {summary.bullets?.map((bullet, i) => (
-                  <p key={`${idx}-${i}`}>{bullet}</p>
+            {aiSummary?.summaries?.length > 0 && (
+              <div className="ai-summary-grid">
+                {aiSummary.summaries.map((summary, idx) => (
+                  <article key={`ai-${idx}`} className="ai-report-card">
+                    <div className="ai-report-card-top">
+                      <span className="ai-report-kind">{String(summary.type || "summary").replace(/_/g, " ")}</span>
+                      <span className="ai-report-count">{summary.bullets?.length || 0} points</span>
+                    </div>
+                    <h4>{String(summary.type || "Summary").replace(/\b\w/g, (c) => c.toUpperCase())}</h4>
+                    <ul className="ai-report-bullets">
+                      {(summary.bullets || []).map((bullet, i) => (
+                        <li key={`${idx}-${i}`}>{bullet}</li>
+                      ))}
+                    </ul>
+                    {Array.isArray(summary.backing_change_ids) && summary.backing_change_ids.length > 0 && (
+                      <div className="ai-report-foot">
+                        Backed by: {summary.backing_change_ids.slice(0, 4).join(", ")}
+                        {summary.backing_change_ids.length > 4 ? " ..." : ""}
+                      </div>
+                    )}
+                  </article>
                 ))}
-              </article>
-            ))}
+              </div>
+            )}
           </section>
         </>
       )}

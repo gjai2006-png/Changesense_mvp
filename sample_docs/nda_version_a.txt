@@ -1,0 +1,102 @@
+MUTUAL NON-DISCLOSURE AGREEMENT
+
+This Mutual Non-Disclosure Agreement ("Agreement") is entered into as of the date of the last signature below ("Effective Date") by and between the parties identified below.
+
+1. DEFINITIONS
+
+1.1 "Confidential Information" means all non-public information, whether in written, oral, electronic, or other form, disclosed by one party ("Disclosing Party") to the other party ("Receiving Party"), including but not limited to:
+    (a) Technical data, algorithms, source code, software, and specifications;
+    (b) Business plans, financial information, customer lists, and market analyses;
+    (c) Trade secrets, inventions, product designs, and engineering documents;
+    (d) Pricing information, business models, and strategic initiatives.
+
+1.2 "Confidential Information" excludes information that: (i) is or becomes publicly available through no breach of this Agreement; (ii) was rightfully possessed by Receiving Party prior to disclosure, as evidenced by contemporaneous written records; (iii) is independently developed by Receiving Party without use of or reference to the Confidential Information, as evidenced by written records; or (iv) is rightfully received by Receiving Party from a third party without confidentiality restrictions.
+
+1.3 "Purpose" means the potential evaluation, negotiation, and performance of a technology partnership between the parties.
+
+2. PURPOSE
+
+The parties wish to explore a potential technology partnership and, in connection with this exploration, may disclose Confidential Information to each other. This Agreement governs the treatment of such Confidential Information.
+
+3. CONFIDENTIALITY OBLIGATIONS
+
+3.1 The Receiving Party shall:
+    (a) Protect Confidential Information using the same degree of care it uses to protect its own confidential information of similar nature, but in no event less than reasonable care;
+    (b) Limit access to Confidential Information to employees, contractors, and advisors who have a legitimate need to know and who are bound by written obligations of confidentiality substantially similar to those contained in this Agreement;
+    (c) Not use Confidential Information except as necessary for the Purpose;
+    (d) Not disclose Confidential Information to third parties without prior written consent from the Disclosing Party, except as required by law.
+
+3.2 If a Receiving Party is required by law, regulation, court order, or valid governmental request to disclose Confidential Information, it shall:
+    (a) Promptly notify the Disclosing Party in writing (to the extent legally permitted);
+    (b) Cooperate with the Disclosing Party in seeking protective measures, including requesting confidential treatment;
+    (c) Disclose only the minimum Confidential Information legally required.
+
+4. EXCLUSIONS
+
+Notwithstanding Section 1.2, if Confidential Information does not qualify for protection under the exclusions set forth therein, it shall remain Confidential Information regardless of its nature or the manner in which it was developed or obtained.
+
+5. TERM
+
+5.1 This Agreement shall commence on the Effective Date and continue for a period of three (3) years, unless earlier terminated by either party upon thirty (30) days' written notice to the other party.
+
+5.2 Confidential Information disclosed during the term shall remain protected for three (3) years following the date of disclosure, except that trade secrets shall remain protected for as long as they qualify as trade secrets under applicable law.
+
+6. RETURN OR DESTRUCTION OF INFORMATION
+
+6.1 Upon request or termination of this Agreement, Receiving Party shall, at the election of the Disclosing Party, either:
+    (a) Return all Confidential Information and all copies thereof to the Disclosing Party in its original form; or
+    (b) Certify in writing the complete destruction of all Confidential Information and copies thereof.
+
+6.2 Notwithstanding the above, Receiving Party may retain one copy of Confidential Information in its legal or compliance files, provided such copy remains subject to the confidentiality obligations herein.
+
+7. REMEDIES
+
+7.1 The parties acknowledge that breach of this Agreement may cause irreparable harm for which monetary damages may be inadequate. Accordingly, in addition to any other remedies available at law or equity, the Disclosing Party shall be entitled to seek injunctive relief without posting a bond.
+
+7.2 The existence of this Agreement and the disclosure of Confidential Information shall not grant either party any rights or licenses except as expressly provided herein.
+
+8. NO LICENSE
+
+8.1 Disclosure of Confidential Information grants no license or other rights in or to such Confidential Information, except as expressly stated in this Agreement. All intellectual property rights remain the exclusive property of the Disclosing Party.
+
+8.2 No obligation to license, purchase, or enter into any business relationship is created by this Agreement.
+
+9. GOVERNING LAW
+
+This Agreement shall be governed by and construed in accordance with the laws of [State/Country], without regard to its conflict of laws principles. The parties irrevocably submit to the exclusive jurisdiction of the courts located in [Jurisdiction] for the resolution of any disputes arising hereunder.
+
+10. MISCELLANEOUS
+
+10.1 Entire Agreement: This Agreement, together with any exhibit or schedule, constitutes the entire agreement between the parties concerning the subject matter hereof and supersedes all prior and contemporaneous negotiations, understandings, and agreements.
+
+10.2 Amendment: This Agreement may not be amended, modified, or supplemented except by a written instrument signed by authorized representatives of both parties.
+
+10.3 Severability: If any provision of this Agreement is held invalid or unenforceable, such provision shall be modified to the minimum extent necessary to make it enforceable, and the remaining provisions shall continue in full force and effect.
+
+10.4 Waiver: No waiver of any provision or breach of this Agreement shall be effective unless in writing and signed by the waiving party. Waiver of any breach shall not constitute waiver of any other or subsequent breach.
+
+10.5 No Partnership: Nothing in this Agreement shall be construed to create a partnership, joint venture, agency, or employment relationship between the parties.
+
+10.6 Equitable Relief: Without limiting any other remedy, each party acknowledges that breaches of this Agreement may not be fully redressable by damages and is therefore entitled to pursue equitable remedies including injunctive relief.
+
+10.7 Relationship of Parties: Each party is an independent entity. Neither party has the right to bind, commit, or represent the other party or to assume or create any obligation on behalf of the other party.
+
+10.8 Assignment: This Agreement shall not be assigned, delegated, or transferred by either party without the prior written consent of the other party, and any attempted assignment without such consent shall be void. The Agreement shall be binding upon and inure to the benefit of the parties and their respective successors and assigns.
+
+10.9 Notices: All notices hereunder shall be in writing and delivered personally, sent via facsimile with confirmation of receipt, sent via email with confirmation of receipt, or sent via overnight courier service to the addresses specified by each party below. Notices shall be deemed received upon personal delivery, facsimile receipt, email confirmation, or next business day if sent via courier.
+
+IN WITNESS WHEREOF, the parties have executed this Agreement as of the date written below.
+
+PARTY A: _________________________________
+Name: __________________________________
+Title: ___________________________________
+Address: ________________________________
+Date: ___________________________________
+
+
+PARTY B: _________________________________
+Name: __________________________________
+Title: ___________________________________
+Address: ________________________________
+Date: ___________________________________
+

@@ -6,8 +6,10 @@ from .models import MaterialityFinding, ChangeSpan
 MODAL_SHIFTS = [
     ("may", "shall", "Obligation strengthened"),
     ("may", "must", "Obligation strengthened"),
+    ("may", "will", "Obligation strengthened"),
     ("shall", "may", "Obligation weakened"),
     ("must", "may", "Obligation weakened"),
+    ("will", "may", "Obligation weakened"),
 ]
 
 CURRENCY_RE = re.compile(r"\$\s?\d[\d,]*(?:\.\d+)?")
@@ -35,8 +37,12 @@ def _find_modal_shift(before: str, after: str) -> List[MaterialityFinding]:
     findings = []
     b = before.lower()
     a = after.lower()
+
+    def has_modal(text: str, modal: str) -> bool:
+        return re.search(rf"\b{re.escape(modal)}\b", text) is not None
+
     for frm, to, rationale in MODAL_SHIFTS:
-        if frm in b and to in a:
+        if has_modal(b, frm) and has_modal(a, to) and not has_modal(a, frm):
             findings.append(
                 MaterialityFinding(
                     clause_id="",

@@ -786,18 +786,115 @@ pre {
 }
 
 .hl-add {
-  background: #fff7e4;
-  border-radius: 2px;
-  text-decoration: underline;
-  text-decoration-color: #c5a14a;
-  text-decoration-thickness: 1px;
+  background: #e9f8ee;
+  color: #124a2c;
+  border-radius: 3px;
+  box-shadow: inset 0 -1px 0 #8ed0a8;
 }
 
 .hl-remove {
-  background: #fff3df;
-  border-radius: 2px;
+  background: #fdecec;
+  color: #6f1d24;
+  border-radius: 3px;
   text-decoration: line-through;
-  text-decoration-color: #b69244;
+  text-decoration-color: #c25b66;
+  text-decoration-thickness: 1.5px;
+}
+
+.viewer-single pre .hl-add,
+.side-body pre .hl-add,
+.viewer-single pre .hl-remove,
+.side-body pre .hl-remove {
+  padding: 0 1px;
+}
+
+.ai-summary {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.ai-summary > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+}
+
+.ai-summary > header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.ai-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.ai-report-card {
+  background: #ffffff;
+  border: 1px solid #e4ebf5;
+  border-radius: 14px;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.ai-report-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-report-kind {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #51627a;
+  font-weight: 700;
+}
+
+.ai-report-count {
+  font-size: 11px;
+  color: #607087;
+  background: #eef4fb;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.ai-report-card h4 {
+  margin: 0;
+  font-size: 15px;
+  color: #132238;
+}
+
+.ai-report-bullets {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+}
+
+.ai-report-bullets li {
+  color: #243447;
+  line-height: 1.45;
+  font-size: 13px;
+}
+
+.ai-report-foot {
+  font-size: 11px;
+  color: #6b7280;
+  border-top: 1px dashed #e5e7eb;
+  padding-top: 8px;
 }
 
 @media (max-width: 1200px) {
@@ -843,6 +940,10 @@ pre {
   }
 
   .viewer-side {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-summary-grid {
     grid-template-columns: 1fr;
   }
 

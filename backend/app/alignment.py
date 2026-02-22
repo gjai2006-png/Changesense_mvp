@@ -9,6 +9,26 @@ def _normalize_label(label: str) -> str:
     return re.sub(r"\W+", "", label.lower())
 
 
+HEADING_RE = re.compile(r"^\s*(\d+(?:\.\d+)*)\s*[\).]\s+(.+?)\s*$")
+
+
+def _extract_heading_parts(node) -> Tuple[str, str]:
+    if not getattr(node, "text", None):
+        return "", ""
+    first_line = (node.text or "").splitlines()[0].strip()
+    m = HEADING_RE.match(first_line)
+    if not m:
+        return "", ""
+    return m.group(1), m.group(2).strip()
+
+
+def _match_key(node) -> str:
+    _, title = _extract_heading_parts(node)
+    if title:
+        return _normalize_label(title)
+    return _normalize_label(getattr(node, "label", "") or "")
+
+
 def _bag_vector(text: str) -> Dict[str, int]:
     vec: Dict[str, int] = {}
     for tok in re.findall(r"\w+", text.lower()):
@@ -42,25 +62,34 @@ def align_clauses(tree_a, tree_b) -> AlignmentMap:
     a_nodes = _flatten(tree_a)
     b_nodes = _flatten(tree_b)
 
-    b_by_label = { _normalize_label(n.label): n for n in b_nodes if n.label }
+    b_by_key: Dict[str, List] = {}
+    for n in b_nodes:
+        key = _match_key(n)
+        if key:
+            b_by_key.setdefault(key, []).append(n)
     used_b = set()
     entries: List[AlignmentEntry] = []
 
     for a in a_nodes:
         reasons = []
         matched = None
-        if a.label:
-            key = _normalize_label(a.label)
-            if key in b_by_label:
-                matched = b_by_label[key]
-                reasons.append(AlignmentReason(method="label_exact", score=1.0))
+        key = _match_key(a)
+        if key:
+            for candidate in b_by_key.get(key, []):
+                if candidate.clause_id in used_b:
+                    continue
+                matched = candidate
+                reasons.append(AlignmentReason(method="title_exact", score=1.0))
+                break
 
         if not matched:
             best = (0.0, None)
             for b in b_nodes:
                 if b.clause_id in used_b:
                     continue
-                label_sim = SequenceMatcher(None, a.label, b.label).ratio() if a.label and b.label else 0
+                a_title = _extract_heading_parts(a)[1] or a.label
+                b_title = _extract_heading_parts(b)[1] or b.label
+                label_sim = SequenceMatcher(None, a_title, b_title).ratio() if a_title and b_title else 0
                 head_sim = SequenceMatcher(None, " ".join(a.text_tokens[:12]), " ".join(b.text_tokens[:12])).ratio()
                 score = max(label_sim, head_sim)
                 if score > best[0]:
@@ -84,7 +113,11 @@ def align_clauses(tree_a, tree_b) -> AlignmentMap:
 
         if matched:
             used_b.add(matched.clause_id)
-            move_detected = a.path != matched.path
+            a_num, a_title = _extract_heading_parts(a)
+            b_num, b_title = _extract_heading_parts(matched)
+            same_title = _normalize_label(a_title) and _normalize_label(a_title) == _normalize_label(b_title)
+            renumber_only = same_title and a_num and b_num and a_num != b_num
+            move_detected = (a.path != matched.path) and not renumber_only
             entries.append(
                 AlignmentEntry(
                     old_clause_id=a.clause_id,

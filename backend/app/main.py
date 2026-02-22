@@ -224,29 +224,29 @@ async def compare(version_a: UploadFile = File(...), version_b: UploadFile = Fil
             if not new_clause:
                 continue
 
-        before = old_clause.text
-        after = new_clause.text
-        clause_texts[new_clause.clause_id] = after
+            before = old_clause.text
+            after = new_clause.text
+            clause_texts[new_clause.clause_id] = after
 
-        change = diff_clause(before, after)
-        change.clause_id = new_clause.clause_id
-        change.heading = new_clause.label
-        change.before_text = before
-        change.after_text = after
-        if entry.move_detected:
-            change.moved_blocks.append(entry.old_clause_id)
-        changes.append(change)
+            change = diff_clause(before, after)
+            change.clause_id = new_clause.clause_id
+            change.heading = new_clause.label
+            change.before_text = before
+            change.after_text = after
+            if entry.move_detected:
+                change.moved_blocks.append(entry.old_clause_id)
+            changes.append(change)
 
-        for finding in apply_rules(before, after):
-            finding.clause_id = new_clause.clause_id
-            materiality.append(finding)
+            for finding in apply_rules(before, after):
+                finding.clause_id = new_clause.clause_id
+                materiality.append(finding)
 
-        numeric_deltas.extend(extract_numeric_deltas(new_clause.clause_id, before, after))
+            numeric_deltas.extend(extract_numeric_deltas(new_clause.clause_id, before, after))
 
-        if new_clause.clause_id in term_map:
-            definition_changes.append(
-                {"term": term_map[new_clause.clause_id], "before": before, "after": after}
-            )
+            if new_clause.clause_id in term_map:
+                definition_changes.append(
+                    {"term": term_map[new_clause.clause_id], "before": before, "after": after}
+                )
 
     # Table diff
     table_changes = diff_tables(_table_cells(canonical_a), _table_cells(canonical_b))

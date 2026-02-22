@@ -2,6 +2,7 @@ import json
 import os
 import urllib.request
 from typing import Optional
+from pathlib import Path
 
 from pydantic import ValidationError
 
@@ -39,6 +40,37 @@ AI_SCHEMA_HINT = {
     ]
 }
 
+_ENV_LOADED = False
+
+
+def _load_env_file_once() -> None:
+    global _ENV_LOADED
+    if _ENV_LOADED:
+        return
+    _ENV_LOADED = True
+
+    candidates = [
+        Path.cwd() / ".env",
+        Path(__file__).resolve().parents[2] / ".env",
+    ]
+
+    for env_path in candidates:
+        try:
+            if not env_path.exists():
+                continue
+            for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+            break
+        except OSError:
+            continue
+
 
 def build_prompt(payload: dict) -> str:
     return (
@@ -61,6 +93,7 @@ def build_prompt(payload: dict) -> str:
 
 
 def call_gemini(payload: dict, api_key: Optional[str] = None, model: Optional[str] = None) -> dict:
+    _load_env_file_once()
     api_key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise RuntimeError("Missing GEMINI_API_KEY or GOOGLE_API_KEY")

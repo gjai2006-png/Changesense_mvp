@@ -33,6 +33,60 @@ function buildSegments(text, spans, side) {
   return spans.map((span) => ({ type: span.type === target ? target : "plain", text: span.text }));
 }
 
+function tokenizeWithWhitespace(text) {
+  return (text || "").match(/\w+|\s+|[^\w\s]/g) || [];
+}
+
+function buildDiffSpansFallback(before, after) {
+  const beforeTokens = tokenizeWithWhitespace(before);
+  const afterTokens = tokenizeWithWhitespace(after);
+
+  const lcs = Array.from({ length: beforeTokens.length + 1 }, () =>
+    Array(afterTokens.length + 1).fill(0)
+  );
+
+  for (let i = beforeTokens.length - 1; i >= 0; i -= 1) {
+    for (let j = afterTokens.length - 1; j >= 0; j -= 1) {
+      if (beforeTokens[i] === afterTokens[j]) {
+        lcs[i][j] = 1 + lcs[i + 1][j + 1];
+      } else {
+        lcs[i][j] = Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+      }
+    }
+  }
+
+  const beforeSpans = [];
+  const afterSpans = [];
+  let i = 0;
+  let j = 0;
+
+  while (i < beforeTokens.length && j < afterTokens.length) {
+    if (beforeTokens[i] === afterTokens[j]) {
+      beforeSpans.push({ text: beforeTokens[i], type: "unchanged" });
+      afterSpans.push({ text: afterTokens[j], type: "unchanged" });
+      i += 1;
+      j += 1;
+    } else if (lcs[i + 1][j] >= lcs[i][j + 1]) {
+      beforeSpans.push({ text: beforeTokens[i], type: "removed" });
+      i += 1;
+    } else {
+      afterSpans.push({ text: afterTokens[j], type: "added" });
+      j += 1;
+    }
+  }
+
+  while (i < beforeTokens.length) {
+    beforeSpans.push({ text: beforeTokens[i], type: "removed" });
+    i += 1;
+  }
+  while (j < afterTokens.length) {
+    afterSpans.push({ text: afterTokens[j], type: "added" });
+    j += 1;
+  }
+
+  return { before_spans: beforeSpans, after_spans: afterSpans };
+}
+
 function renderSegments(segments, keyPrefix) {
   return segments.map((seg, i) => {
     if (seg.type === "added") return <span key={`${keyPrefix}-a-${i}`} className="hl-add">{seg.text}</span>;
@@ -71,8 +125,16 @@ export default function DocumentViewer({ change, aiSummary, onClose }) {
     return afterText;
   }, [change.type, afterText]);
 
-  const segA = useMemo(() => buildSegments(cleanA, change?.word_diffs?.before_spans, "a"), [cleanA, change?.word_diffs?.before_spans]);
-  const segB = useMemo(() => buildSegments(cleanB, change?.word_diffs?.after_spans, "b"), [cleanB, change?.word_diffs?.after_spans]);
+  const wordDiffs = useMemo(() => {
+    if (change?.word_diffs?.before_spans?.length || change?.word_diffs?.after_spans?.length) {
+      return change.word_diffs;
+    }
+    if (!cleanA && !cleanB) return null;
+    return buildDiffSpansFallback(cleanA, cleanB);
+  }, [change?.word_diffs, cleanA, cleanB]);
+
+  const segA = useMemo(() => buildSegments(cleanA, wordDiffs?.before_spans, "a"), [cleanA, wordDiffs?.before_spans]);
+  const segB = useMemo(() => buildSegments(cleanB, wordDiffs?.after_spans, "b"), [cleanB, wordDiffs?.after_spans]);
 
   const aiInsight = useMemo(() => {
     if (!aiSummary?.insights) return null;
@@ -234,14 +296,14 @@ export default function DocumentViewer({ change, aiSummary, onClose }) {
           {activeTab === "a" && (
             <section className="viewer-single" ref={soloARef}>
               <div data-anchor="clause-anchor" />
-              {cleanA ? <pre>{cleanA}</pre> : <div className="empty-line">Clause not present in Version A.</div>}
+              {cleanA ? <pre>{renderSegments(segA, "single-a")}</pre> : <div className="empty-line">Clause not present in Version A.</div>}
             </section>
           )}
 
           {activeTab === "b" && (
             <section className="viewer-single" ref={soloBRef}>
               <div data-anchor="clause-anchor" />
-              {cleanB ? <pre>{cleanB}</pre> : <div className="empty-line">Clause not present in Version B.</div>}
+              {cleanB ? <pre>{renderSegments(segB, "single-b")}</pre> : <div className="empty-line">Clause not present in Version B.</div>}
             </section>
           )}
 
