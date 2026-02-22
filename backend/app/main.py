@@ -353,6 +353,10 @@ async def ai_insights(run_id: str, ai_enabled: bool = True):
 def _fallback_ai(compare: CompareResponse) -> AiResponse:
     insights = []
     change_ids = []
+    exec_bullets = []
+    econ_bullets = []
+    def_bullets = []
+    nego_bullets = []
 
     def _summarize_delta(before: str, after: str) -> str:
         from .rules_engine import CURRENCY_RE, PERCENT_RE, DATE_RE, DURATION_RE
@@ -365,27 +369,43 @@ def _fallback_ai(compare: CompareResponse) -> AiResponse:
 
         parts = []
         if before_nums != after_nums:
-            parts.append("Economic terms changed (amounts/percentages).")
+            parts.append(f"Economic terms changed from {', '.join(before_nums)} to {', '.join(after_nums)}.")
         if before_dates != after_dates:
-            parts.append("Key dates shifted.")
+            parts.append(f"Key dates shifted from {', '.join(before_dates)} to {', '.join(after_dates)}.")
         if before_dur != after_dur:
-            parts.append("Timing windows changed.")
+            parts.append(f"Timing windows changed from {', '.join(before_dur)} to {', '.join(after_dur)}.")
         if " shall " in f" {before.lower()} " and " may " in f" {after.lower()} ":
-            parts.append("Obligation softened from mandatory to permissive.")
+            parts.append("Obligation softened from mandatory to permissive (\"shall\" to \"may\").")
         if " may " in f" {before.lower()} " and " shall " in f" {after.lower()} ":
-            parts.append("Obligation strengthened from permissive to mandatory.")
-        return " ".join(parts) if parts else "Language updated; review the before/after wording."
+            parts.append("Obligation strengthened from permissive to mandatory (\"may\" to \"shall\").")
+        return " ".join(parts) if parts else "Language updated with no clear numeric/date/modality shift; review the before/after wording for scope or meaning changes."
+
+    # Build a quick map of impacted clauses (from dependency graph edges)
+    impacted_map = {}
+    for edge in compare.dependency_graph.edges:
+        if edge.edge_type in ("term", "cross_ref", "numeric"):
+            impacted_map.setdefault(edge.source, set()).add(edge.target)
 
     for change in compare.changes:
         label = change.heading or change.clause_id
         before = change.before_text or ""
         after = change.after_text or ""
         if not before and after:
-            explanation = "This section appears newly added and may introduce new obligations or rights."
+            explanation = (
+                "This section appears newly added. It likely introduces new obligations, rights, or conditions that did not exist "
+                "in the prior draft, so it should be reviewed for deal impact and compliance implications."
+            )
         elif before and not after:
-            explanation = "This section appears removed, which may eliminate prior obligations or protections."
+            explanation = (
+                "This section appears removed. Any obligations, protections, or conditions in the prior draft may no longer apply, "
+                "which could materially shift risk or responsibilities."
+            )
         else:
             explanation = _summarize_delta(before, after)
+
+        impacted = list(impacted_map.get(change.clause_id, []))[:3]
+        if impacted:
+            explanation = f"{explanation} Related clauses that may be affected include: {', '.join(impacted)}."
 
         insights.append(
             {
@@ -399,15 +419,50 @@ def _fallback_ai(compare: CompareResponse) -> AiResponse:
         )
         change_ids.append(change.clause_id)
 
+        # Build richer summaries
+        if "definition" in label.lower():
+            def_bullets.append(f"{label}: definition updated.")
+        if "Economic terms changed" in explanation or "amounts/percentages" in explanation:
+            econ_bullets.append(f"{label}: monetary/percentage terms changed.")
+        if "Obligation strengthened" in explanation or "Obligation softened" in explanation:
+            nego_bullets.append(f"{label}: obligation strength shifted.")
+        if "Key dates shifted" in explanation or "Timing windows changed" in explanation:
+            exec_bullets.append(f"{label}: timing changed.")
+
     summaries = [
         {
             "type": "executive",
             "bullets": [
-                "Changes were detected across multiple sections affecting economics, timing, and obligations.",
-                "Key sections include payment terms, confidentiality, termination, and definitions (see per‑change notes).",
-                "Focus review on sections with numeric, date, or obligation shifts.",
+                "Material changes detected across multiple sections.",
+                *exec_bullets[:5],
+                "Review sections with numeric, date, or obligation shifts first.",
             ],
             "backing_change_ids": change_ids[:12],
         }
     ]
+
+    if nego_bullets:
+        summaries.append(
+            {
+                "type": "negotiation",
+                "bullets": nego_bullets[:6],
+                "backing_change_ids": change_ids[:12],
+            }
+        )
+    if econ_bullets:
+        summaries.append(
+            {
+                "type": "economics",
+                "bullets": econ_bullets[:6],
+                "backing_change_ids": change_ids[:12],
+            }
+        )
+    if def_bullets:
+        summaries.append(
+            {
+                "type": "definitions",
+                "bullets": def_bullets[:6],
+                "backing_change_ids": change_ids[:12],
+            }
+        )
     return AiResponse(insights=insights, impacts=[], summaries=summaries, ai_enabled=True)

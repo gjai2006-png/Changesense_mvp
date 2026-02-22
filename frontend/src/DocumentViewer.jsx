@@ -98,8 +98,8 @@ export default function DocumentViewer({ change, aiSummary, onClose }) {
           ? "leans buyer-friendly"
           : aiInsight.risk_direction === "seller-friendly"
           ? "leans seller-friendly"
-          : "appears neutral";
-      parts.push(`${aiInsight.semantic_label}: ${aiInsight.explanation} This change ${direction}.`);
+          : "";
+      parts.push(`${aiInsight.semantic_label}: ${aiInsight.explanation}${direction ? ` This change ${direction}.` : ""}`);
     }
     if (aiImpacts.length > 0) {
       const impactText = aiImpacts

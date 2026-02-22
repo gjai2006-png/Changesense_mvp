@@ -58,6 +58,22 @@ def build_pdf_report(changes: List[ChangeSet], materiality: List[MaterialityFind
                     c.showPage()
                     y = height - 50
 
+    if ai and ai.insights:
+        c.showPage()
+        y = height - 50
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, y, "AI Per-Change Interpretation")
+        y -= 18
+        c.setFont("Helvetica", 10)
+        for insight in ai.insights[:60]:
+            c.drawString(50, y, f"{insight.semantic_label}")
+            y -= 12
+            c.drawString(60, y, insight.explanation[:160])
+            y -= 12
+            if y < 80:
+                c.showPage()
+                y = height - 50
+
     c.showPage()
     c.save()
     buffer.seek(0)
