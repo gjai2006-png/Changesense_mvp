@@ -277,15 +277,31 @@ export default function App() {
       }
     });
     
-    // Create risk entries from materiality findings
-    const risks = materiality.map((finding) => ({
-      id: finding.clause_id,
-      clause_id: finding.clause_id,
-      heading: clauseLabels[finding.clause_id] || "Change",
-      risk_tags: [finding.category] || [],
-      before_text: "",
-      after_text: "",
-    }));
+    // Aggregate materiality findings by clause so one clause renders as one card with multiple tags.
+    const riskByClause = new Map();
+    materiality.forEach((finding) => {
+      const key = finding.clause_id || "__unknown__";
+      const existing = riskByClause.get(key);
+      if (!existing) {
+        riskByClause.set(key, {
+          id: key,
+          clause_id: key,
+          heading: clauseLabels[key] || "Change",
+          risk_tags: finding.category ? [finding.category] : [],
+          before_text: "",
+          after_text: "",
+          findings: [finding],
+        });
+        return;
+      }
+
+      if (finding.category && !existing.risk_tags.includes(finding.category)) {
+        existing.risk_tags.push(finding.category);
+      }
+      existing.findings.push(finding);
+    });
+
+    const risks = Array.from(riskByClause.values());
     
     // Calculate stats
     const stats = {
