@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-const API_BASE = "http://localhost:8000";
-
 function similarityBand(value) {
   if (value >= 95) return "good";
   if (value >= 85) return "warn";
@@ -43,14 +41,12 @@ function renderSegments(segments, keyPrefix) {
   });
 }
 
-export default function DocumentViewer({ change, onClose }) {
+export default function DocumentViewer({ change, aiSummary, onClose }) {
   const [activeTab, setActiveTab] = useState("side");
   const [syncScroll, setSyncScroll] = useState(true);
   const [showSimilarityInfo, setShowSimilarityInfo] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [docA, setDocA] = useState(null);
-  const [docB, setDocB] = useState(null);
 
   const paneARef = useRef(null);
   const paneBRef = useRef(null);
@@ -67,45 +63,26 @@ export default function DocumentViewer({ change, onClose }) {
 
   const cleanA = useMemo(() => {
     if (change.type === "added") return "";
-    return extractByRange(docA, start, end, beforeText);
-  }, [change.type, docA, start, end, beforeText]);
+    return beforeText;
+  }, [change.type, beforeText]);
 
   const cleanB = useMemo(() => {
     if (change.type === "deleted") return "";
-    return extractByRange(docB, start, end, afterText);
-  }, [change.type, docB, start, end, afterText]);
+    return afterText;
+  }, [change.type, afterText]);
 
   const segA = useMemo(() => buildSegments(cleanA, change?.word_diffs?.before_spans, "a"), [cleanA, change?.word_diffs?.before_spans]);
   const segB = useMemo(() => buildSegments(cleanB, change?.word_diffs?.after_spans, "b"), [cleanB, change?.word_diffs?.after_spans]);
 
-  useEffect(() => {
-    let active = true;
+  const aiInsight = useMemo(() => {
+    if (!aiSummary?.insights) return null;
+    return aiSummary.insights.find((i) => i.change_id === change?.id) || null;
+  }, [aiSummary, change?.id]);
 
-    const load = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-
-        const [aRes, bRes] = await Promise.all([fetch(`${API_BASE}/document/a`), fetch(`${API_BASE}/document/b`)]);
-        if (!aRes.ok || !bRes.ok) throw new Error("Unable to load documents for viewer.");
-
-        const [a, b] = await Promise.all([aRes.json(), bRes.json()]);
-        if (!active) return;
-        setDocA(a);
-        setDocB(b);
-      } catch (e) {
-        if (!active) return;
-        setError(e.message || "Viewer load failed.");
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
-
-    load();
-    return () => {
-      active = false;
-    };
-  }, []);
+  const aiImpacts = useMemo(() => {
+    if (!aiSummary?.impacts) return [];
+    return aiSummary.impacts.filter((i) => i.trigger_change_id === change?.id);
+  }, [aiSummary, change?.id]);
 
   useEffect(() => {
     if (activeTab !== "side" || !syncScroll) return;
@@ -161,7 +138,7 @@ export default function DocumentViewer({ change, onClose }) {
     return (
       <div className="viewer-backdrop" onClick={onClose}>
         <div className="viewer-sheet" onClick={(e) => e.stopPropagation()}>
-          <div className="viewer-state">Loading clause view...</div>
+          <div className="viewer-state">Loading change view...</div>
         </div>
       </div>
     );
@@ -182,8 +159,8 @@ export default function DocumentViewer({ change, onClose }) {
       <div className="viewer-sheet" onClick={(e) => e.stopPropagation()}>
         <header className="viewer-header">
           <div>
-            <div className="viewer-id">{change?.id || "Clause"}</div>
-            <h3>{change?.heading || "Clause Review"}</h3>
+            <div className="viewer-id">{change?.heading || "Change"}</div>
+            <h3>Change Review</h3>
           </div>
 
           <div className="viewer-meta">
@@ -201,6 +178,33 @@ export default function DocumentViewer({ change, onClose }) {
             </div>
           )}
         </header>
+
+        {(aiInsight || aiImpacts.length > 0) && (
+          <section className="viewer-ai">
+            <h4>AI Interpretation (Non-Deterministic)</h4>
+            {aiInsight && (
+              <div className="viewer-ai-block">
+                <div><strong>Semantic Meaning:</strong> {aiInsight.semantic_label}</div>
+                <div><strong>Risk Direction:</strong> {aiInsight.risk_direction}</div>
+                <div><strong>Explanation:</strong> {aiInsight.explanation}</div>
+                <div><strong>Confidence:</strong> {Math.round((aiInsight.confidence || 0) * 100)}%</div>
+              </div>
+            )}
+            {aiImpacts.length > 0 && (
+              <div className="viewer-ai-block">
+                <div><strong>Potential Downstream Impacts:</strong></div>
+                {aiImpacts.map((impact, idx) => (
+                  <div key={`impact-${idx}`} className="viewer-ai-impact">
+                    <div>{impact.impact_summary}</div>
+                    <div className="viewer-ai-meta">
+                      Linked via: {impact.why_linked} · Confidence {Math.round((impact.confidence || 0) * 100)}%
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
         <div className="viewer-tabs">
           <button className={activeTab === "a" ? "active" : ""} onClick={() => setActiveTab("a")}>Version A</button>

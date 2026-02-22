@@ -82,34 +82,65 @@ def _ai_insights(compare: CompareResponse, ai_enabled: bool) -> AiResponse:
         return AiResponse(insights=[], impacts=[], summaries=[], ai_enabled=False)
 
     # Minimal structured payload for external AI (no full document text).
+    clause_nodes = _flatten(compare.clause_tree_b)
+    clause_meta = {
+        c.clause_id: {
+            "label": c.label,
+            "path": c.path,
+            "type": c.type,
+        }
+        for c in clause_nodes
+    }
+
+    def _snippet(text: str, limit: int = 300) -> str:
+        return (text or "")[:limit]
+
     payload = {
-        "materiality": [m.dict() for m in compare.materiality[:20]],
-        "numeric_deltas": [n.dict() for n in compare.numeric_deltas[:20]],
-        "impact_reports": [
-            {
-                "term_changed": r.term_changed,
-                "affected_clauses": [c.clause_id for c in r.affected_clauses[:10]],
-            }
-            for r in compare.impact_reports[:10]
-        ],
         "changes": [
             {
-                "clause_id": c.clause_id,
+                "change_id": c.clause_id,
+                "before_snippet": _snippet(c.before_text),
+                "after_snippet": _snippet(c.after_text),
+                "metadata": clause_meta.get(c.clause_id, {}),
                 "insertions": [i.dict() for i in c.insertions[:3]],
                 "deletions": [d.dict() for d in c.deletions[:3]],
                 "substitutions": [s.dict() for s in c.substitutions[:3]],
             }
-            for c in compare.changes[:10]
+            for c in compare.changes[:25]
         ],
+        "materiality_findings": [m.dict() for m in compare.materiality[:50]],
+        "numeric_deltas": [n.dict() for n in compare.numeric_deltas[:50]],
+        "impact_reports": [
+            {
+                "term_changed": r.term_changed,
+                "affected_clauses": [c.clause_id for c in r.affected_clauses[:20]],
+            }
+            for r in compare.impact_reports[:20]
+        ],
+        "dependency_graph": {
+            "edges": [e.dict() for e in compare.dependency_graph.edges[:200]],
+        },
     }
 
     # Attempt Gemini call if API key is present.
     try:
         gemini_out = call_gemini(payload)
+        insights = gemini_out.get("insights", [])
+        impacts = gemini_out.get("impacts", [])
+        summaries = gemini_out.get("summaries", [])
+
+        # Confidence gating: flag low-confidence responses.
+        for item in insights:
+            if item.get("confidence", 0) < 0.5:
+                item["explanation"] = f"Needs review: {item.get('explanation', '')}"
+        for item in impacts:
+            if item.get("confidence", 0) < 0.5:
+                item["impact_summary"] = f"Needs review: {item.get('impact_summary', '')}"
+
         return AiResponse(
-            insights=gemini_out.get("insights", []),
-            impacts=gemini_out.get("impacts", []),
-            summaries=gemini_out.get("summaries", []),
+            insights=insights,
+            impacts=impacts,
+            summaries=summaries,
             ai_enabled=True,
             raw_text=gemini_out.get("raw_text"),
         )
@@ -195,6 +226,7 @@ async def compare(version_a: UploadFile = File(...), version_b: UploadFile = Fil
 
         change = diff_clause(before, after)
         change.clause_id = new_clause.clause_id
+        change.heading = new_clause.label
         change.before_text = before
         change.after_text = after
         if entry.move_detected:
@@ -218,6 +250,7 @@ async def compare(version_a: UploadFile = File(...), version_b: UploadFile = Fil
         changes.append(
             ChangeSet(
                 clause_id="table-changes",
+                heading="Table Changes",
                 before_text="",
                 after_text="",
                 insertions=[],
@@ -280,20 +313,22 @@ async def scan_integrity(run_id: str):
 
 
 @app.get("/report")
-async def report(run_id: str):
+async def report(run_id: str, ai_enabled: bool = True):
     if run_id not in RUNS:
         raise HTTPException(status_code=404, detail="Run not found")
     compare = RUNS[run_id]
-    pdf = build_pdf_report(compare.changes, compare.materiality)
+    ai = _ai_insights(compare, ai_enabled) if ai_enabled else None
+    pdf = build_pdf_report(compare.changes, compare.materiality, ai=ai)
     return Response(content=pdf, media_type="application/pdf")
 
 
 @app.get("/report/html")
-async def report_html(run_id: str):
+async def report_html(run_id: str, ai_enabled: bool = True):
     if run_id not in RUNS:
         raise HTTPException(status_code=404, detail="Run not found")
     compare = RUNS[run_id]
-    html = build_html_report(compare.changes, compare.materiality)
+    ai = _ai_insights(compare, ai_enabled) if ai_enabled else None
+    html = build_html_report(compare.changes, compare.materiality, ai=ai)
     return Response(content=html, media_type="text/html")
 
 

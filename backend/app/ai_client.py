@@ -3,7 +3,41 @@ import os
 import urllib.request
 from typing import Optional
 
+from pydantic import ValidationError
+
+from .models import AiResponse
+
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+
+AI_SCHEMA_HINT = {
+    "insights": [
+        {
+            "change_id": "string",
+            "semantic_label": "string",
+            "risk_direction": "buyer-friendly | seller-friendly | neutral",
+            "explanation": "string",
+            "confidence": 0.0,
+            "citations_to_facts": ["string"]
+        }
+    ],
+    "impacts": [
+        {
+            "trigger_change_id": "string",
+            "impacted_clause_id": "string",
+            "impact_summary": "string",
+            "why_linked": "term reference | cross-ref | numeric link",
+            "confidence": 0.0
+        }
+    ],
+    "summaries": [
+        {
+            "type": "executive | negotiation | economics | definitions",
+            "bullets": ["string"],
+            "backing_change_ids": ["string"]
+        }
+    ]
+}
 
 
 def build_prompt(payload: dict) -> str:
@@ -15,7 +49,8 @@ def build_prompt(payload: dict) -> str:
         "- Use cautious language: may/likely.\n"
         "- Cite deterministic IDs in citations_to_facts.\n"
         "- If uncertain, lower confidence.\n\n"
-        "Return JSON with keys: insights, impacts, summaries.\n\n"
+        "Return JSON with keys: insights, impacts, summaries.\n"
+        f"JSON schema hint:\n{json.dumps(AI_SCHEMA_HINT, indent=2)}\n\n"
         f"FACTS:\n{json.dumps(payload, indent=2)}\n"
     )
 
@@ -60,9 +95,20 @@ def call_gemini(payload: dict, api_key: Optional[str] = None, model: Optional[st
         raise RuntimeError("Gemini returned empty content")
 
     try:
-        return json.loads(text)
+        parsed = json.loads(text)
     except json.JSONDecodeError:
-        # Return wrapped text if the model didn't follow JSON-only instruction
+        return {
+            "insights": [],
+            "impacts": [],
+            "summaries": [],
+            "raw_text": text,
+        }
+
+    # Schema validation (guardrail)
+    try:
+        AiResponse(**{**parsed, "ai_enabled": True})
+        return parsed
+    except ValidationError:
         return {
             "insights": [],
             "impacts": [],

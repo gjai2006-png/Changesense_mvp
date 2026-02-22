@@ -86,6 +86,7 @@ class ChangeSpan(BaseModel):
 
 class ChangeSet(BaseModel):
     clause_id: str
+    heading: Optional[str] = None
     before_text: str
     after_text: str
     insertions: List[ChangeSpan]

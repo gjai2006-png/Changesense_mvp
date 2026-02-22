@@ -35,11 +35,11 @@ function ChangeCard({ change, type, onOpen, defaultOpen = false }) {
       <summary className="change-card-summary">
         <div>
           <div className="change-card-topline">
-            <span className="change-id">{change.id || "Clause"}</span>
+            <span className="change-id">{change.heading || "Change"}</span>
             <span className={`change-pill type-${type}`}>{type}</span>
             {similarity !== null && <span className={`change-pill similarity-${similarityClass(similarity)}`}>{similarity}%</span>}
           </div>
-          <h4>{change.heading || "Untitled Clause"}</h4>
+          <h4>{change.heading || "Change"}</h4>
         </div>
         <span className="change-expand">View</span>
       </summary>
@@ -104,6 +104,8 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [viewerChange, setViewerChange] = useState(null);
+  const [runId, setRunId] = useState(null);
+  const [aiSummary, setAiSummary] = useState(null);
 
   const clauseMap = useMemo(() => {
     const map = new Map();
@@ -160,8 +162,8 @@ export default function App() {
   }, [compare?.risks, clauseMap]);
 
   const integrityItems = useMemo(() => {
-    if (!integrity?.ghost_changes) return [];
-    return integrity.ghost_changes.map((item) => {
+    if (!integrity?.integrity_alerts) return [];
+    return integrity.integrity_alerts.map((item) => {
       const clause = clauseMap.get(item.id);
       return {
         ...(clause || item),
@@ -169,7 +171,18 @@ export default function App() {
         type: clause?.type || "integrity",
       };
     });
-  }, [integrity?.ghost_changes, clauseMap]);
+  }, [integrity?.integrity_alerts, clauseMap]);
+
+  const flattenClauseTree = (node, acc = {}) => {
+    if (!node) return acc;
+    if (node.clause_id && node.label && node.clause_id !== "root") {
+      acc[node.clause_id] = node.label;
+    }
+    if (node.children) {
+      node.children.forEach((child) => flattenClauseTree(child, acc));
+    }
+    return acc;
+  };
 
   const runVerification = async () => {
     if (!versionA || !versionB) {
@@ -181,6 +194,8 @@ export default function App() {
     setError(null);
     setCompare(null);
     setIntegrity(null);
+    setRunId(null);
+    setAiSummary(null);
 
     try {
       const compareBody = new FormData();
@@ -195,13 +210,24 @@ export default function App() {
       // Transform backend response to frontend expected structure
       const transformedCompare = transformBackendResponse(compareJson);
       
+      setRunId(compareJson.run?.run_id || null);
+
       // Extract integrity alerts
       const integrityJson = {
-        ghost_changes: compareJson.integrity_alerts || [],
+        integrity_alerts: compareJson.integrity_alerts || [],
       };
 
       setCompare(transformedCompare);
       setIntegrity(integrityJson);
+
+      if (compareJson.run?.run_id) {
+        const aiRes = await fetch(
+          `${API_BASE}/ai/insights?run_id=${encodeURIComponent(compareJson.run.run_id)}&ai_enabled=true`,
+          { method: "POST" }
+        );
+        const aiJson = await aiRes.json();
+        setAiSummary(aiJson);
+      }
     } catch (runError) {
       setError(runError.message || "Verification failed.");
     } finally {
@@ -210,7 +236,8 @@ export default function App() {
   };
 
   const transformBackendResponse = (backendResponse) => {
-    const { changes = [], materiality = [] } = backendResponse;
+    const { changes = [], materiality = [], clause_tree_b } = backendResponse;
+    const clauseLabels = flattenClauseTree(clause_tree_b?.root);
     
     // Group changes by type
     const modified = [];
@@ -220,7 +247,7 @@ export default function App() {
     changes.forEach((change) => {
       const transformedChange = {
         id: change.clause_id,
-        heading: change.clause_id, // Use clause_id as heading if not available
+        heading: clauseLabels[change.clause_id] || "Change",
         before: change.before_text || "",
         after: change.after_text || "",
         before_text: change.before_text || "",
@@ -242,7 +269,7 @@ export default function App() {
     // Create risk entries from materiality findings
     const risks = materiality.map((finding) => ({
       id: finding.clause_id,
-      heading: finding.clause_id,
+      heading: clauseLabels[finding.clause_id] || "Change",
       risk_tags: [finding.category] || [],
       before_text: "",
       after_text: "",
@@ -293,7 +320,7 @@ export default function App() {
         <section className="landing">
           <div className="landing-content">
             <div className="kicker">ChangeSense</div>
-            <h1>Clause-Level Verification</h1>
+            <h1>Change Verification</h1>
             <p>Deterministic structural comparison for high-stakes documents.</p>
           </div>
 
@@ -308,7 +335,7 @@ export default function App() {
                 <input
                   className="file-input-hidden"
                   type="file"
-                  accept=".txt,.docx"
+                  accept=".txt,.docx,.pdf"
                   onChange={(e) => setVersionA(e.target.files?.[0] || null)}
                 />
               </label>
@@ -321,13 +348,13 @@ export default function App() {
                 <input
                   className="file-input-hidden"
                   type="file"
-                  accept=".txt,.docx"
+                  accept=".txt,.docx,.pdf"
                   onChange={(e) => setVersionB(e.target.files?.[0] || null)}
                 />
               </label>
             </div>
             <button className="btn btn-primary large" onClick={runVerification} disabled={loading}>
-              {loading ? "Running..." : "Run Clause-Level Verification"}
+              {loading ? "Running..." : "Run Change Verification"}
             </button>
           </div>
         </section>
@@ -345,7 +372,7 @@ export default function App() {
               <input
                 className="file-input-hidden"
                 type="file"
-                accept=".txt,.docx"
+                accept=".txt,.docx,.pdf"
                 onChange={(e) => setVersionA(e.target.files?.[0] || null)}
               />
             </label>
@@ -358,13 +385,13 @@ export default function App() {
               <input
                 className="file-input-hidden"
                 type="file"
-                accept=".txt,.docx"
+                accept=".txt,.docx,.pdf"
                 onChange={(e) => setVersionB(e.target.files?.[0] || null)}
               />
             </label>
           </div>
           <button className="btn btn-primary" onClick={runVerification} disabled={loading}>
-            {loading ? "Running..." : "Run Clause-Level Verification"}
+            {loading ? "Running..." : "Run Change Verification"}
           </button>
           <div className="run-meta">
             <span className={`status ${compare ? "done" : "idle"}`}>{compare ? "Complete" : "Idle"}</span>
@@ -374,7 +401,7 @@ export default function App() {
       )}
 
       {error && <div className="error">{error}</div>}
-      {loading && <div className="loading">Analyzing clauses and integrity signals...</div>}
+      {loading && <div className="loading">Analyzing changes and integrity signals...</div>}
 
       {compare && (
         <>
@@ -387,7 +414,7 @@ export default function App() {
 
               <div className="high-risk-body">
                 {highRiskChanges.length === 0 ? (
-                  <div className="empty-line">No high-risk clauses detected.</div>
+                  <div className="empty-line">No high-risk changes detected.</div>
                 ) : (
                   highRiskChanges.map((change, idx) => (
                     <ChangeCard
@@ -411,7 +438,10 @@ export default function App() {
                 <StatBlock value={compare.stats.high_risk_count} label="High Risk" />
                 <StatBlock value={compare.stats.obligation_shift_count} label="Obligation Shifts" />
               </div>
-              <button className="btn btn-ghost" onClick={() => window.open(`${API_BASE}/report`, "_blank")}>
+              <button
+                className="btn btn-ghost"
+                onClick={() => runId && window.open(`${API_BASE}/report?run_id=${encodeURIComponent(runId)}`, "_blank")}
+              >
                 Export PDF Report
               </button>
             </aside>
@@ -423,10 +453,71 @@ export default function App() {
             <EvidencePanel title="Deleted" type="deleted" changes={compare.clauses.deleted} onOpen={openViewer} />
             <EvidencePanel title="Integrity" type="integrity" changes={integrityItems} onOpen={openViewer} />
           </section>
+
+          <section className="ai-summary">
+            <header>
+              <h2>AI Semantic Summary</h2>
+            </header>
+            {!aiSummary && <div className="empty-line">Run verification to see AI insights.</div>}
+            {aiSummary?.summaries?.length === 0 && !aiSummary?.raw_text && (
+              <div className="empty-line">No AI summary returned.</div>
+            )}
+            {aiSummary?.raw_text && (
+              <div className="empty-line">AI returned non-JSON output. Showing raw response below.</div>
+            )}
+            {aiSummary?.raw_text && <pre className="preview-box">{aiSummary.raw_text}</pre>}
+            {aiSummary?.summaries?.map((summary, idx) => (
+              <article key={`ai-${idx}`} className="change-card">
+                <h4>{summary.type}</h4>
+                {summary.bullets?.map((bullet, i) => (
+                  <p key={`${idx}-${i}`}>{bullet}</p>
+                ))}
+              </article>
+            ))}
+          </section>
+
+          <section className="ai-summary">
+            <header>
+              <h2>AI Change Meaning</h2>
+            </header>
+            {!aiSummary && <div className="empty-line">Run verification to see AI meaning per change.</div>}
+            {aiSummary?.insights?.length === 0 && !aiSummary?.raw_text && (
+              <div className="empty-line">No AI change insights returned.</div>
+            )}
+            {aiSummary?.insights?.map((insight, idx) => (
+              <article key={`insight-${idx}`} className="change-card">
+                <h4>{insight.semantic_label}</h4>
+                <p>Risk Direction: {insight.risk_direction}</p>
+                <p>{insight.explanation}</p>
+                <p>Confidence: {Math.round((insight.confidence || 0) * 100)}%</p>
+              </article>
+            ))}
+          </section>
+
+          <section className="ai-summary">
+            <header>
+              <h2>AI Use-Case Impact</h2>
+            </header>
+            {!aiSummary && <div className="empty-line">Run verification to see AI impact analysis.</div>}
+            {aiSummary?.impacts?.length === 0 && !aiSummary?.raw_text && (
+              <div className="empty-line">No AI impact analysis returned.</div>
+            )}
+            {aiSummary?.impacts?.map((impact, idx) => (
+              <article key={`impact-${idx}`} className="change-card">
+                <h4>Impacted Clause: {impact.impacted_clause_id}</h4>
+                <p>Trigger: {impact.trigger_change_id}</p>
+                <p>{impact.impact_summary}</p>
+                <p>Why Linked: {impact.why_linked}</p>
+                <p>Confidence: {Math.round((impact.confidence || 0) * 100)}%</p>
+              </article>
+            ))}
+          </section>
         </>
       )}
 
-      {viewerChange && <DocumentViewer change={viewerChange} onClose={() => setViewerChange(null)} />}
+      {viewerChange && (
+        <DocumentViewer change={viewerChange} aiSummary={aiSummary} onClose={() => setViewerChange(null)} />
+      )}
     </div>
   );
 }

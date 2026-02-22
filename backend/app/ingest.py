@@ -89,9 +89,16 @@ def parse_upload(name: str, data: bytes) -> CanonicalDoc:
     if name.endswith(".pdf"):
         return parse_pdf(data)
     # Fallback plain text
-    text = canonicalize(data.decode("utf-8", errors="ignore"))
-    span = SourceSpan(paragraph=0)
-    block = Block(block_id="txt-0", block_type="paragraph", text=text, span=span)
-    tokens = _tokens_from_text(text, span)
+    raw = data.decode("utf-8", errors="ignore")
+    blocks: List[Block] = []
+    tokens: List[Token] = []
+    for idx, line in enumerate(raw.splitlines()):
+        line_text = canonicalize(line)
+        if not line_text:
+            continue
+        span = SourceSpan(paragraph=idx)
+        block_id = f"txt-{idx}"
+        blocks.append(Block(block_id=block_id, block_type="paragraph", text=line_text, span=span))
+        tokens.extend(_tokens_from_text(line_text, span))
     token_map = {t.token_id: t.span for t in tokens}
-    return CanonicalDoc(doc_id=f"doc-{uuid.uuid4().hex}", blocks=[block], tokens=tokens, token_map=token_map)
+    return CanonicalDoc(doc_id=f"doc-{uuid.uuid4().hex}", blocks=blocks, tokens=tokens, token_map=token_map)
