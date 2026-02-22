@@ -46,6 +46,7 @@ app.add_middleware(
 )
 
 RUNS: Dict[str, CompareResponse] = {}
+AI_RUNS: Dict[str, AiResponse] = {}
 
 
 def _flatten(tree):
@@ -137,6 +138,9 @@ def _ai_insights(compare: CompareResponse, ai_enabled: bool) -> AiResponse:
             if item.get("confidence", 0) < 0.5:
                 item["impact_summary"] = f"Needs review: {item.get('impact_summary', '')}"
 
+        if not insights:
+            return _fallback_ai(compare)
+
         return AiResponse(
             insights=insights,
             impacts=impacts,
@@ -144,9 +148,9 @@ def _ai_insights(compare: CompareResponse, ai_enabled: bool) -> AiResponse:
             ai_enabled=True,
             raw_text=gemini_out.get("raw_text"),
         )
-    except Exception:
-        # Fallback to deterministic stub if Gemini fails.
-        pass
+    except Exception as e:
+        print(f"[AI] Gemini failed: {e}")
+        return _fallback_ai(compare)
 
     insights: List[AiChangeInsight] = []
     for finding in compare.materiality[:10]:
@@ -317,7 +321,10 @@ async def report(run_id: str, ai_enabled: bool = True):
     if run_id not in RUNS:
         raise HTTPException(status_code=404, detail="Run not found")
     compare = RUNS[run_id]
-    ai = _ai_insights(compare, ai_enabled) if ai_enabled else None
+    ai = AI_RUNS.get(run_id) if ai_enabled else None
+    if ai is None and ai_enabled:
+        ai = _ai_insights(compare, ai_enabled)
+        AI_RUNS[run_id] = ai
     pdf = build_pdf_report(compare.changes, compare.materiality, ai=ai)
     return Response(content=pdf, media_type="application/pdf")
 
@@ -327,7 +334,10 @@ async def report_html(run_id: str, ai_enabled: bool = True):
     if run_id not in RUNS:
         raise HTTPException(status_code=404, detail="Run not found")
     compare = RUNS[run_id]
-    ai = _ai_insights(compare, ai_enabled) if ai_enabled else None
+    ai = AI_RUNS.get(run_id) if ai_enabled else None
+    if ai is None and ai_enabled:
+        ai = _ai_insights(compare, ai_enabled)
+        AI_RUNS[run_id] = ai
     html = build_html_report(compare.changes, compare.materiality, ai=ai)
     return Response(content=html, media_type="text/html")
 
@@ -337,4 +347,67 @@ async def ai_insights(run_id: str, ai_enabled: bool = True):
     if run_id not in RUNS:
         raise HTTPException(status_code=404, detail="Run not found")
     compare = RUNS[run_id]
-    return _ai_insights(compare, ai_enabled)
+    ai = _ai_insights(compare, ai_enabled)
+    AI_RUNS[run_id] = ai
+    return ai
+def _fallback_ai(compare: CompareResponse) -> AiResponse:
+    insights = []
+    change_ids = []
+
+    def _summarize_delta(before: str, after: str) -> str:
+        from .rules_engine import CURRENCY_RE, PERCENT_RE, DATE_RE, DURATION_RE
+        before_nums = CURRENCY_RE.findall(before) + PERCENT_RE.findall(before)
+        after_nums = CURRENCY_RE.findall(after) + PERCENT_RE.findall(after)
+        before_dates = DATE_RE.findall(before)
+        after_dates = DATE_RE.findall(after)
+        before_dur = DURATION_RE.findall(before)
+        after_dur = DURATION_RE.findall(after)
+
+        parts = []
+        if before_nums != after_nums:
+            parts.append("Economic terms changed (amounts/percentages).")
+        if before_dates != after_dates:
+            parts.append("Key dates shifted.")
+        if before_dur != after_dur:
+            parts.append("Timing windows changed.")
+        if " shall " in f" {before.lower()} " and " may " in f" {after.lower()} ":
+            parts.append("Obligation softened from mandatory to permissive.")
+        if " may " in f" {before.lower()} " and " shall " in f" {after.lower()} ":
+            parts.append("Obligation strengthened from permissive to mandatory.")
+        return " ".join(parts) if parts else "Language updated; review the before/after wording."
+
+    for change in compare.changes:
+        label = change.heading or change.clause_id
+        before = change.before_text or ""
+        after = change.after_text or ""
+        if not before and after:
+            explanation = "This section appears newly added and may introduce new obligations or rights."
+        elif before and not after:
+            explanation = "This section appears removed, which may eliminate prior obligations or protections."
+        else:
+            explanation = _summarize_delta(before, after)
+
+        insights.append(
+            {
+                "change_id": change.clause_id,
+                "semantic_label": label,
+                "risk_direction": "neutral",
+                "explanation": explanation,
+                "confidence": 0.6,
+                "citations_to_facts": [change.clause_id],
+            }
+        )
+        change_ids.append(change.clause_id)
+
+    summaries = [
+        {
+            "type": "executive",
+            "bullets": [
+                "Changes were detected across multiple sections affecting economics, timing, and obligations.",
+                "Key sections include payment terms, confidentiality, termination, and definitions (see per‑change notes).",
+                "Focus review on sections with numeric, date, or obligation shifts.",
+            ],
+            "backing_change_ids": change_ids[:12],
+        }
+    ]
+    return AiResponse(insights=insights, impacts=[], summaries=summaries, ai_enabled=True)

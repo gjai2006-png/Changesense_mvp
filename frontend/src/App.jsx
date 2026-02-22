@@ -226,7 +226,16 @@ export default function App() {
           { method: "POST" }
         );
         const aiJson = await aiRes.json();
-        setAiSummary(aiJson);
+        if (aiJson?.raw_text) {
+          try {
+            const parsed = JSON.parse(aiJson.raw_text);
+            setAiSummary({ ...parsed, ai_enabled: true });
+          } catch (e) {
+            setAiSummary({ error: "AI returned non-JSON output. Please retry." });
+          }
+        } else {
+          setAiSummary(aiJson);
+        }
       }
     } catch (runError) {
       setError(runError.message || "Verification failed.");
@@ -247,7 +256,8 @@ export default function App() {
     changes.forEach((change) => {
       const transformedChange = {
         id: change.clause_id,
-        heading: clauseLabels[change.clause_id] || "Change",
+        clause_id: change.clause_id,
+        heading: change.heading || clauseLabels[change.clause_id] || "Change",
         before: change.before_text || "",
         after: change.after_text || "",
         before_text: change.before_text || "",
@@ -269,6 +279,7 @@ export default function App() {
     // Create risk entries from materiality findings
     const risks = materiality.map((finding) => ({
       id: finding.clause_id,
+      clause_id: finding.clause_id,
       heading: clauseLabels[finding.clause_id] || "Change",
       risk_tags: [finding.category] || [],
       before_text: "",
@@ -296,12 +307,15 @@ export default function App() {
   };
 
   const openViewer = (change, type) => {
-    const base = clauseMap.get(change.id) || { ...change, type };
+    const changeId = change.clause_id || change.id;
+    const base = clauseMap.get(changeId) || { ...change, type };
     const riskAnalysis = compare?.risks?.find((risk) => risk.id === change.id);
 
     setViewerChange({
       ...base,
       ...change,
+      id: changeId,
+      clause_id: changeId,
       type: base.type || type,
       risk_tags: riskAnalysis?.risk_tags || base.risk_tags || change.risk_tags || [],
       riskAnalysis: riskAnalysis || base.riskAnalysis,
@@ -456,59 +470,19 @@ export default function App() {
 
           <section className="ai-summary">
             <header>
-              <h2>AI Semantic Summary</h2>
+              <h2>AI Final Report</h2>
             </header>
             {!aiSummary && <div className="empty-line">Run verification to see AI insights.</div>}
-            {aiSummary?.summaries?.length === 0 && !aiSummary?.raw_text && (
+            {aiSummary?.error && <div className="empty-line">{aiSummary.error}</div>}
+            {aiSummary && !aiSummary.error && aiSummary?.summaries?.length === 0 && (
               <div className="empty-line">No AI summary returned.</div>
             )}
-            {aiSummary?.raw_text && (
-              <div className="empty-line">AI returned non-JSON output. Showing raw response below.</div>
-            )}
-            {aiSummary?.raw_text && <pre className="preview-box">{aiSummary.raw_text}</pre>}
             {aiSummary?.summaries?.map((summary, idx) => (
               <article key={`ai-${idx}`} className="change-card">
                 <h4>{summary.type}</h4>
                 {summary.bullets?.map((bullet, i) => (
                   <p key={`${idx}-${i}`}>{bullet}</p>
                 ))}
-              </article>
-            ))}
-          </section>
-
-          <section className="ai-summary">
-            <header>
-              <h2>AI Change Meaning</h2>
-            </header>
-            {!aiSummary && <div className="empty-line">Run verification to see AI meaning per change.</div>}
-            {aiSummary?.insights?.length === 0 && !aiSummary?.raw_text && (
-              <div className="empty-line">No AI change insights returned.</div>
-            )}
-            {aiSummary?.insights?.map((insight, idx) => (
-              <article key={`insight-${idx}`} className="change-card">
-                <h4>{insight.semantic_label}</h4>
-                <p>Risk Direction: {insight.risk_direction}</p>
-                <p>{insight.explanation}</p>
-                <p>Confidence: {Math.round((insight.confidence || 0) * 100)}%</p>
-              </article>
-            ))}
-          </section>
-
-          <section className="ai-summary">
-            <header>
-              <h2>AI Use-Case Impact</h2>
-            </header>
-            {!aiSummary && <div className="empty-line">Run verification to see AI impact analysis.</div>}
-            {aiSummary?.impacts?.length === 0 && !aiSummary?.raw_text && (
-              <div className="empty-line">No AI impact analysis returned.</div>
-            )}
-            {aiSummary?.impacts?.map((impact, idx) => (
-              <article key={`impact-${idx}`} className="change-card">
-                <h4>Impacted Clause: {impact.impacted_clause_id}</h4>
-                <p>Trigger: {impact.trigger_change_id}</p>
-                <p>{impact.impact_summary}</p>
-                <p>Why Linked: {impact.why_linked}</p>
-                <p>Confidence: {Math.round((impact.confidence || 0) * 100)}%</p>
               </article>
             ))}
           </section>

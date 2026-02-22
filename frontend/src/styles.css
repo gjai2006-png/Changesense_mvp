@@ -570,6 +570,29 @@ pre {
   animation: sheetIn 180ms ease;
 }
 
+.viewer-ai {
+  margin: 12px 24px 0 24px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #f7f8fa;
+  border: 1px solid #e5e7eb;
+}
+
+.viewer-ai-label {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6b7280;
+  margin-bottom: 8px;
+}
+
+.viewer-ai-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #111827;
+}
+
 @keyframes sheetIn {
   from {
     opacity: 0;

@@ -76,13 +76,39 @@ export default function DocumentViewer({ change, aiSummary, onClose }) {
 
   const aiInsight = useMemo(() => {
     if (!aiSummary?.insights) return null;
-    return aiSummary.insights.find((i) => i.change_id === change?.id) || null;
-  }, [aiSummary, change?.id]);
+    const key = change?.clause_id || change?.id;
+    const matches = aiSummary.insights.filter((i) => i.change_id === key);
+    if (matches.length === 0) return null;
+    const combined = matches.map((m) => m.explanation).join(" ");
+    return { ...matches[0], explanation: combined };
+  }, [aiSummary, change?.id, change?.clause_id]);
 
   const aiImpacts = useMemo(() => {
     if (!aiSummary?.impacts) return [];
-    return aiSummary.impacts.filter((i) => i.trigger_change_id === change?.id);
-  }, [aiSummary, change?.id]);
+    const key = change?.clause_id || change?.id;
+    return aiSummary.impacts.filter((i) => i.trigger_change_id === key);
+  }, [aiSummary, change?.id, change?.clause_id]);
+
+  const aiParagraph = useMemo(() => {
+    if (!aiInsight && aiImpacts.length === 0) return null;
+    const parts = [];
+    if (aiInsight) {
+      const direction =
+        aiInsight.risk_direction === "buyer-friendly"
+          ? "leans buyer-friendly"
+          : aiInsight.risk_direction === "seller-friendly"
+          ? "leans seller-friendly"
+          : "appears neutral";
+      parts.push(`${aiInsight.semantic_label}: ${aiInsight.explanation} This change ${direction}.`);
+    }
+    if (aiImpacts.length > 0) {
+      const impactText = aiImpacts
+        .map((impact) => `${impact.impact_summary} (linked via ${impact.why_linked})`)
+        .join(" ");
+      parts.push(`Potential downstream impacts: ${impactText}`);
+    }
+    return parts.join(" ");
+  }, [aiInsight, aiImpacts]);
 
   useEffect(() => {
     if (activeTab !== "side" || !syncScroll) return;
@@ -179,30 +205,16 @@ export default function DocumentViewer({ change, aiSummary, onClose }) {
           )}
         </header>
 
-        {(aiInsight || aiImpacts.length > 0) && (
+        {aiParagraph && (
           <section className="viewer-ai">
-            <h4>AI Interpretation (Non-Deterministic)</h4>
-            {aiInsight && (
-              <div className="viewer-ai-block">
-                <div><strong>Semantic Meaning:</strong> {aiInsight.semantic_label}</div>
-                <div><strong>Risk Direction:</strong> {aiInsight.risk_direction}</div>
-                <div><strong>Explanation:</strong> {aiInsight.explanation}</div>
-                <div><strong>Confidence:</strong> {Math.round((aiInsight.confidence || 0) * 100)}%</div>
-              </div>
-            )}
-            {aiImpacts.length > 0 && (
-              <div className="viewer-ai-block">
-                <div><strong>Potential Downstream Impacts:</strong></div>
-                {aiImpacts.map((impact, idx) => (
-                  <div key={`impact-${idx}`} className="viewer-ai-impact">
-                    <div>{impact.impact_summary}</div>
-                    <div className="viewer-ai-meta">
-                      Linked via: {impact.why_linked} · Confidence {Math.round((impact.confidence || 0) * 100)}%
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="viewer-ai-label">AI Interpretation</div>
+            <p className="viewer-ai-text">{aiParagraph}</p>
+          </section>
+        )}
+        {!aiParagraph && (
+          <section className="viewer-ai">
+            <div className="viewer-ai-label">AI Interpretation</div>
+            <p className="viewer-ai-text">AI summary not available for this change.</p>
           </section>
         )}
 

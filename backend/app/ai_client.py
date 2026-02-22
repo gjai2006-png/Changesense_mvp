@@ -47,6 +47,11 @@ def build_prompt(payload: dict) -> str:
         "Rules:\n"
         "- Separate facts from interpretation.\n"
         "- Use cautious language: may/likely.\n"
+        "- Explanations must be plain-English and human-readable.\n"
+        "- Do NOT mention model confidence or internal scoring in explanations.\n"
+        "- Do NOT repeat field names like 'confidence' or 'risk direction' in the explanation text.\n"
+        "- Provide one insight per change_id in the input changes list.\n"
+        "- Summaries must cover all material changes and reference backing_change_ids.\n"
         "- Cite deterministic IDs in citations_to_facts.\n"
         "- If uncertain, lower confidence.\n\n"
         "Return JSON with keys: insights, impacts, summaries.\n"
@@ -81,7 +86,7 @@ def call_gemini(payload: dict, api_key: Optional[str] = None, model: Optional[st
         method="POST",
     )
 
-    with urllib.request.urlopen(req) as resp:
+    with urllib.request.urlopen(req, timeout=20) as resp:
         raw = resp.read().decode("utf-8")
     data = json.loads(raw)
 
@@ -92,7 +97,7 @@ def call_gemini(payload: dict, api_key: Optional[str] = None, model: Optional[st
         text = None
 
     if not text:
-        raise RuntimeError("Gemini returned empty content")
+        raise RuntimeError(f"Gemini returned empty content: {raw[:300]}")
 
     try:
         parsed = json.loads(text)

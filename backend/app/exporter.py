@@ -45,7 +45,7 @@ def build_pdf_report(changes: List[ChangeSet], materiality: List[MaterialityFind
     if ai and ai.summaries:
         y -= 10
         c.setFont("Helvetica-Bold", 12)
-        c.drawString(50, y, "AI Interpretive Summary (Not Deterministic)")
+        c.drawString(50, y, "AI Interpretive Summary")
         y -= 18
         c.setFont("Helvetica", 11)
         for summary in ai.summaries:
@@ -58,60 +58,6 @@ def build_pdf_report(changes: List[ChangeSet], materiality: List[MaterialityFind
                     c.showPage()
                     y = height - 50
 
-    # Detailed AI meaning per change
-    if ai and ai.insights:
-        c.showPage()
-        y = height - 50
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(50, y, "AI Semantic Meaning Per Change (Interpretive)")
-        y -= 18
-        c.setFont("Helvetica", 10)
-        for insight in ai.insights[:40]:
-            c.drawString(50, y, f"{insight.semantic_label} | {insight.risk_direction} | {int((insight.confidence or 0)*100)}%")
-            y -= 12
-            c.drawString(60, y, insight.explanation[:120])
-            y -= 12
-            if y < 80:
-                c.showPage()
-                y = height - 50
-
-    if ai and ai.impacts:
-        c.showPage()
-        y = height - 50
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(50, y, "AI Impact Propagation (Interpretive)")
-        y -= 18
-        c.setFont("Helvetica", 10)
-        for impact in ai.impacts[:40]:
-            c.drawString(50, y, f"Impact: {impact.impacted_clause_id} (trigger {impact.trigger_change_id})")
-            y -= 12
-            c.drawString(60, y, impact.impact_summary[:120])
-            y -= 12
-            if y < 80:
-                c.showPage()
-                y = height - 50
-
-    # Deterministic change list (for auditability)
-    c.showPage()
-    y = height - 50
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(50, y, "Deterministic Change Log")
-    y -= 18
-    c.setFont("Helvetica", 9)
-    for change in changes[:50]:
-        heading = change.heading or change.clause_id
-        c.drawString(50, y, f"{heading}")
-        y -= 10
-        if change.before_text:
-            c.drawString(60, y, f"Before: {change.before_text[:120]}")
-            y -= 10
-        if change.after_text:
-            c.drawString(60, y, f"After: {change.after_text[:120]}")
-            y -= 10
-        y -= 6
-        if y < 80:
-            c.showPage()
-            y = height - 50
     c.showPage()
     c.save()
     buffer.seek(0)
