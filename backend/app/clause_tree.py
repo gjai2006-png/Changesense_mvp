@@ -1,5 +1,5 @@
 import re
-from typing import List
+from typing import List, Optional
 
 from .models import ClauseNode, ClauseTree, DefinedTerm
 from .utils import tokenize_legal
@@ -11,7 +11,7 @@ def _normalize_heading_title(title: str) -> str:
     return re.sub(r"\s+", " ", (title or "").strip())
 
 
-def _make_node(idx: int, label: str, text: str, span, node_type: str = "section", path: str | None = None) -> ClauseNode:
+def _make_node(idx: int, label: str, text: str, span, node_type: str = "section", path: Optional[str] = None) -> ClauseNode:
     return ClauseNode(
         clause_id=f"clause-{idx}",
         type=node_type,

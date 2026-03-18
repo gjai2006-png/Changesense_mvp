@@ -4,12 +4,12 @@ from typing import List
 from .models import MaterialityFinding, ChangeSpan
 
 MODAL_SHIFTS = [
-    ("may", "shall", "Obligation strengthened"),
-    ("may", "must", "Obligation strengthened"),
-    ("may", "will", "Obligation strengthened"),
-    ("shall", "may", "Obligation weakened"),
-    ("must", "may", "Obligation weakened"),
-    ("will", "may", "Obligation weakened"),
+    ("may", "shall", "Discretion changed to a mandatory obligation"),
+    ("may", "must", "Discretion changed to a mandatory obligation"),
+    ("may", "will", "Discretion changed to a mandatory commitment"),
+    ("shall", "may", "Mandatory obligation softened to discretionary language"),
+    ("must", "may", "Mandatory obligation softened to discretionary language"),
+    ("will", "may", "Firm commitment softened to discretionary language"),
 ]
 
 CURRENCY_RE = re.compile(r"\$\s?\d[\d,]*(?:\.\d+)?")
@@ -46,7 +46,7 @@ def _find_modal_shift(before: str, after: str) -> List[MaterialityFinding]:
             findings.append(
                 MaterialityFinding(
                     clause_id="",
-                    category="Obligation Strength",
+                    category="obligation_shift",
                     severity="high",
                     rationale=rationale,
                     exact_diff_span=ChangeSpan(before=before, after=after),
@@ -59,22 +59,22 @@ def _find_numeric(before: str, after: str) -> List[MaterialityFinding]:
     findings = []
     if CURRENCY_RE.findall(before) != CURRENCY_RE.findall(after):
         findings.append(
-            MaterialityFinding(
-                clause_id="",
-                category="Numeric Threshold",
-                severity="high",
-                rationale="Currency amount changed",
-                exact_diff_span=ChangeSpan(before=before, after=after),
+                MaterialityFinding(
+                    clause_id="",
+                    category="numeric_change",
+                    severity="high",
+                    rationale="Currency amount changed",
+                    exact_diff_span=ChangeSpan(before=before, after=after),
+                )
             )
-        )
     if PERCENT_RE.findall(before) != PERCENT_RE.findall(after):
         findings.append(
-            MaterialityFinding(
-                clause_id="",
-                category="Numeric Threshold",
-                severity="medium",
-                rationale="Percentage threshold changed",
-                exact_diff_span=ChangeSpan(before=before, after=after),
+                MaterialityFinding(
+                    clause_id="",
+                    category="numeric_change",
+                    severity="medium",
+                    rationale="Percentage threshold changed",
+                    exact_diff_span=ChangeSpan(before=before, after=after),
             )
         )
     return findings
@@ -84,22 +84,22 @@ def _find_time(before: str, after: str) -> List[MaterialityFinding]:
     findings = []
     if DATE_RE.findall(before) != DATE_RE.findall(after):
         findings.append(
-            MaterialityFinding(
-                clause_id="",
-                category="Time Period",
-                severity="high",
-                rationale="Date changed",
-                exact_diff_span=ChangeSpan(before=before, after=after),
+                MaterialityFinding(
+                    clause_id="",
+                    category="date_change",
+                    severity="high",
+                    rationale="Date changed",
+                    exact_diff_span=ChangeSpan(before=before, after=after),
             )
         )
     if DURATION_RE.findall(before) != DURATION_RE.findall(after):
         findings.append(
-            MaterialityFinding(
-                clause_id="",
-                category="Time Period",
-                severity="medium",
-                rationale="Duration window changed",
-                exact_diff_span=ChangeSpan(before=before, after=after),
+                MaterialityFinding(
+                    clause_id="",
+                    category="duration_change",
+                    severity="medium",
+                    rationale="Duration window changed",
+                    exact_diff_span=ChangeSpan(before=before, after=after),
             )
         )
     return findings
@@ -113,7 +113,7 @@ def _find_key_terms(before: str, after: str) -> List[MaterialityFinding]:
             findings.append(
                 MaterialityFinding(
                     clause_id="",
-                    category=label,
+                    category=f"key_term_{label.lower().replace(' ', '_').replace('/', '_')}",
                     severity="medium",
                     rationale=f"Change detected in {label} language",
                     exact_diff_span=ChangeSpan(before=before, after=after),

@@ -1,6 +1,9 @@
 import json
 import os
+import socket
+import time
 import urllib.request
+import urllib.error
 from typing import Optional
 from pathlib import Path
 
@@ -119,8 +122,25 @@ def call_gemini(payload: dict, api_key: Optional[str] = None, model: Optional[st
         method="POST",
     )
 
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        raw = resp.read().decode("utf-8")
+    timeout_seconds = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "45"))
+    retry_count = int(os.getenv("GEMINI_RETRY_COUNT", "2"))
+
+    raw = None
+    last_error = None
+    for attempt in range(retry_count + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
+                raw = resp.read().decode("utf-8")
+            break
+        except (urllib.error.URLError, socket.timeout, TimeoutError) as exc:
+            last_error = exc
+            if attempt >= retry_count:
+                raise
+            time.sleep(min(2 * (attempt + 1), 4))
+
+    if raw is None:
+        raise RuntimeError(f"Gemini request failed: {last_error}")
+
     data = json.loads(raw)
 
     text = None

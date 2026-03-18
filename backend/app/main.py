@@ -368,7 +368,15 @@ async def report(run_id: str, ai_enabled: bool = True):
     if ai is None and ai_enabled:
         ai = _ai_insights(compare, ai_enabled)
         AI_RUNS[run_id] = ai
-    pdf = build_pdf_report(compare.changes, compare.materiality, ai=ai)
+    pdf = build_pdf_report(
+        compare.changes,
+        compare.materiality,
+        ai=ai,
+        version_a=compare.run.version_a.name,
+        version_b=compare.run.version_b.name,
+        run_id=compare.run.run_id,
+        integrity_count=len(compare.integrity_alerts),
+    )
     return Response(content=pdf, media_type="application/pdf")
 
 
